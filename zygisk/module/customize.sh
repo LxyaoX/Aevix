@@ -61,7 +61,10 @@ extract() {
 extract_xz() {
   local file="$1"
   local dir="$2"
-  local name="${3:-$(basename "$file")}"
+  # The entry keeps its path unless a name is given: framework/vector.dex has to land in
+  # $MODPATH/framework/, which is where the daemon opens it from, and only the lib/ and bin/
+  # payloads are flattened, because those are renamed to <abi>.so and dex2oat64 on purpose.
+  local name="${3:-$file}"
   local base
   base=$(basename "$file")
   local stage="${TMPDIR_FOR_VERIFY}/xz"
@@ -81,7 +84,7 @@ extract_xz() {
     abort_verify "Failed to verify $file.xz"
   fi
 
-  mkdir -p "$dir"
+  mkdir -p "$dir/$(dirname "$name")"
   if ! $XZ -d -c "$stage/$base.xz" > "$dir/$name"; then
     rm -f "$dir/$name"
     abort_verify "Failed to decompress $file.xz"
