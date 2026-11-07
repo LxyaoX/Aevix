@@ -199,6 +199,11 @@ object Dex2OatServer {
           return true
         }
       } catch (e: ErrnoException) {
+        // A wrapper this build does not ship is not a mount that failed. Since the module went
+        // 64-bit only there is no bin/dex2oat32, and reading that ENOENT as "not mounted" made
+        // start() unmount the 64-bit side, mark dex2oat incompatible and return before the
+        // socket loop it was about to serve ever ran.
+        if (e.errno == OsConstants.ENOENT) continue
         return true
       }
     }
