@@ -22,9 +22,13 @@ struct UniqueFd {
 
 extern "C" JNIEXPORT void JNICALL Java_org_matrix_vector_daemon_env_Dex2OatServer_doMountNative(
     JNIEnv *env, jobject, jboolean enabled, jstring r32, jstring d32, jstring r64, jstring d64) {
-    char dex2oat32[PATH_MAX], dex2oat64[PATH_MAX];
+    // The module now ships a 64-bit wrapper only, so bin/dex2oat32 is expected to be absent rather
+    // than an error: an empty first byte means "no wrapper for that width" and the mounts below
+    // skip it. Before, the buffer was left uninitialised on failure and mounted whatever the stack
+    // happened to hold.
+    char dex2oat32[PATH_MAX] = {0}, dex2oat64[PATH_MAX] = {0};
     if (realpath("bin/dex2oat32", dex2oat32) == nullptr) {
-        PLOGE("resolve realpath for bin/dex2oat32");
+        LOGI("No 32-bit dex2oat wrapper, leaving 32-bit dex2oat alone");
     }
     if (realpath("bin/dex2oat64", dex2oat64) == nullptr) {
         PLOGE("resolve realpath for bin/dex2oat64");
@@ -52,11 +56,11 @@ extern "C" JNIEXPORT void JNICALL Java_org_matrix_vector_daemon_env_Dex2OatServe
 
         if (enabled) {
             LOGI("Enable dex2oat wrapper");
-            if (r32p) {
+            if (r32p && dex2oat32[0]) {
                 mount(dex2oat32, r32p, nullptr, MS_BIND, nullptr);
                 mount(nullptr, r32p, nullptr, MS_BIND | MS_REMOUNT | MS_RDONLY, nullptr);
             }
-            if (d32p) {
+            if (d32p && dex2oat32[0]) {
                 mount(dex2oat32, d32p, nullptr, MS_BIND, nullptr);
                 mount(nullptr, d32p, nullptr, MS_BIND | MS_REMOUNT | MS_RDONLY, nullptr);
             }

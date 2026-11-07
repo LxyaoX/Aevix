@@ -47,7 +47,11 @@ abstract class GitLatestTagValueSource : ValueSource<String, ValueSourceParamete
     override fun obtain(): String {
         val output = ByteArrayOutputStream()
         val result = execOperations.exec {
-            commandLine("git", "tag", "--list", "--sort=-v:refname")
+            // Only release tags. A canary is tagged `canary-<build>`, so including those here made
+            // the version name read "canary-3125", which put a second hyphen in the archive name
+            // and made the workflow's own parse of it read that tag number back as the build
+            // number. Every canary then reused the same number and replaced the same release.
+            commandLine("git", "tag", "--list", "v[0-9]*", "--sort=-v:refname")
             standardOutput = output
             isIgnoreExitValue = true
         }
@@ -271,7 +275,11 @@ subprojects {
 
             defaultConfig.apply {
                 minSdk = androidMinSdkVersion
-                ndk { abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a")) }
+                // 64-bit ARM only. ARMv7 devices are a shrinking minority and every one of them
+                // cost a second copy of libzygisk, liboat_hook and libdaemon in the module zip,
+                // plus a second dex2oat wrapper to keep correct. See customize.sh for the abort
+                // that now greets a 32-bit install instead of a half-populated module directory.
+                ndk { abiFilters.addAll(listOf("arm64-v8a")) }
 
                 if (this is ApplicationDefaultConfig) {
                     targetSdk = androidTargetSdkVersion

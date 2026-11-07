@@ -51,7 +51,56 @@ extract() {
 
   ui_print "- Verified $file"
 }
+
+# Usage: extract_xz <zip entry without the .xz suffix> <target dir> [target name]
+#
+# The payload is stored as "<entry>.xz" with a "<entry>.xz.sha256" beside it, so the checksum
+# covers exactly the bytes that were compressed, and it is verified before anything is
+# decompressed. xz carries its own CRC, but that only tells us the stream is intact, not that it
+# is the stream this build produced.
+extract_xz() {
+  local file="$1"
+  local dir="$2"
+  local name="${3:-$(basename "$file")}"
+  local base
+  base=$(basename "$file")
+  local stage="${TMPDIR_FOR_VERIFY}/xz"
+  mkdir -p "$stage"
+
+  unzip -oj "$ZIPFILE" "$file.xz" -d "$stage" >/dev/null 2>&1
+  [ -f "$stage/$base.xz" ] || abort_verify "Extracted $file.xz does not exist"
+
+  unzip -oj "$ZIPFILE" "$file.xz.sha256" -d "$stage" >/dev/null 2>&1
+  [ -f "$stage/$base.xz.sha256" ] || abort_verify "Hash file $file.xz.sha256 does not exist"
+
+  local expected_hash
+  read -r expected_hash < "$stage/$base.xz.sha256"
+  expected_hash="${expected_hash%% *}"
+
+  if ! echo "$expected_hash  $stage/$base.xz" | sha256sum -c -s -; then
+    abort_verify "Failed to verify $file.xz"
+  fi
+
+  mkdir -p "$dir"
+  if ! $XZ -d -c "$stage/$base.xz" > "$dir/$name"; then
+    rm -f "$dir/$name"
+    abort_verify "Failed to decompress $file.xz"
+  fi
+  rm -f "$stage/$base.xz"
+  ui_print "- Verified $file"
+}
 # =========================================================
+
+# xz ships as an applet of the busybox every supported root provider mounts, but a stripped-down
+# recovery busybox may not have it. Find out now rather than half-way through extraction.
+XZ="xz"
+if ! command -v xz >/dev/null 2>&1; then
+  if busybox --list 2>/dev/null | grep -qx xz; then
+    XZ="busybox xz"
+  else
+    abort "! xz is required to unpack this module and was not found in PATH"
+  fi
+fi
 
 VERSION=$(grep_prop version "${TMPDIR}/module.prop")
 ui_print "- Vector version ${VERSION}"
@@ -67,57 +116,43 @@ fi
 
 # 1. Map architecture to standard ABI paths, eliminating duplicate logic
 case "$ARCH" in
-    arm|arm64)
-        ABI32="armeabi-v7a"
-        ABI64="arm64-v8a"
+    arm64)
+        ABI="arm64-v8a"
         ;;
     *)
-        abort "! Unsupported platform: $ARCH"
+        abort "! Unsupported platform: $ARCH (64-bit ARM only)"
         ;;
 esac
-ui_print "- Device platform: $ARCH ($ABI32 / $ABI64)"
+ui_print "- Device platform: $ARCH ($ABI)"
 
 ui_print "- Extracting root module files"
-for file in module.prop action.sh service.sh uninstall.sh sepolicy.rule framework/vector.dex cli daemon.apk daemon manager.apk; do
+for file in module.prop action.sh service.sh uninstall.sh sepolicy.rule cli daemon; do
     extract "$ZIPFILE" "$file" "$MODPATH"
 done
+
+ui_print "- Extracting compressed payloads"
+extract_xz "framework/vector.dex" "$MODPATH"
+extract_xz "daemon.apk" "$MODPATH"
+extract_xz "manager.apk" "$MODPATH"
 
 ui_print "- Extracting Zygisk libraries"
 mkdir -p "$MODPATH/zygisk"
 
-# Extract 32-bit lib
-extract "$ZIPFILE" "lib/$ABI32/libzygisk.so" "$MODPATH/zygisk" true
-mv "$MODPATH/zygisk/libzygisk.so" "$MODPATH/zygisk/${ABI32}.so"
-
-# Extract 64-bit lib if supported
-if [ "$IS64BIT" = true ]; then
-    extract "$ZIPFILE" "lib/$ABI64/libzygisk.so" "$MODPATH/zygisk" true
-    mv "$MODPATH/zygisk/libzygisk.so" "$MODPATH/zygisk/${ABI64}.so"
-fi
+extract_xz "lib/$ABI/libzygisk.so" "$MODPATH/zygisk" "${ABI}.so"
 
 if [ "$API" -ge 29 ]; then
     ui_print "- Extracting dex2oat binaries"
     mkdir -p "$MODPATH/bin"
 
-    # Extract 32-bit binaries
-    extract "$ZIPFILE" "bin/$ABI32/dex2oat" "$MODPATH/bin" true
-    extract "$ZIPFILE" "bin/$ABI32/liboat_hook.so" "$MODPATH/bin" true
-    mv "$MODPATH/bin/dex2oat" "$MODPATH/bin/dex2oat32"
-    mv "$MODPATH/bin/liboat_hook.so" "$MODPATH/bin/liboat_hook32.so"
-
-    # Extract 64-bit binaries
-    if [ "$IS64BIT" = true ]; then
-        extract "$ZIPFILE" "bin/$ABI64/dex2oat" "$MODPATH/bin" true
-        extract "$ZIPFILE" "bin/$ABI64/liboat_hook.so" "$MODPATH/bin" true
-        mv "$MODPATH/bin/dex2oat" "$MODPATH/bin/dex2oat64"
-        mv "$MODPATH/bin/liboat_hook.so" "$MODPATH/bin/liboat_hook64.so"
-    fi
+    # The daemon resolves these two by name, so the 64 suffix stays even now that there is
+    # nothing to tell them apart from.
+    extract_xz "bin/$ABI/dex2oat" "$MODPATH/bin" "dex2oat64"
+    extract_xz "bin/$ABI/liboat_hook.so" "$MODPATH/bin" "liboat_hook64.so"
 
     ui_print "- Patching binaries for anti-detection"
     DEV_PATH=$(tr -dc 'a-z0-9' </dev/urandom | head -c 32)
     # Patch only if the file successfully exists
     [ -f "$MODPATH/daemon.apk" ] && sed -i "s/5291374ceda0aef7c5d86cd2a4f6a3ac/$DEV_PATH/g" "$MODPATH/daemon.apk"
-    [ -f "$MODPATH/bin/dex2oat32" ] && sed -i "s/5291374ceda0aef7c5d86cd2a4f6a3ac/$DEV_PATH/" "$MODPATH/bin/dex2oat32"
     [ -f "$MODPATH/bin/dex2oat64" ] && sed -i "s/5291374ceda0aef7c5d86cd2a4f6a3ac/$DEV_PATH/" "$MODPATH/bin/dex2oat64"
 else
     extract "$ZIPFILE" 'system.prop' "$MODPATH"
