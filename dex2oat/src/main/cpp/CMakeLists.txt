@@ -12,6 +12,15 @@ target_include_directories(dex2oat PUBLIC include)
 target_link_libraries(dex2oat log)
 target_link_libraries(oat_hook log lsplt_static)
 
+# This one exports nothing: it is preloaded for its constructor, and dex2oat never looks a symbol
+# up in it. Hiding the rest keeps lsplt's names out of the dynamic table.
+set_target_properties(oat_hook PROPERTIES
+        CXX_VISIBILITY_PRESET hidden
+        C_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN ON)
+# lsplt is a static library compiled without the preset, so its names would still be exported.
+target_link_options(oat_hook PRIVATE -Wl,--exclude-libs,ALL)
+
 if (DEFINED DEBUG_SYMBOLS_PATH)
     message(STATUS "Debug symbols will be placed at ${DEBUG_SYMBOLS_PATH}")
     # ${PROJECT_NAME} is `dex2oat`, so this used to strip only the executable: `oat_hook` kept its

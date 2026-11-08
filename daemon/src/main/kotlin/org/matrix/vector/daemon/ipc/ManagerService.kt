@@ -287,7 +287,12 @@ object ManagerService : IManagerService.Stub() {
 
   override fun setVerboseLogEnabled(enabled: Boolean) {
     PreferenceStore.setVerboseLog(enabled)
-    if (isVerboseLogEnabled()) LogcatMonitor.startVerbose() else LogcatMonitor.stopVerbose()
+    if (isVerboseLogEnabled()) {
+      LogcatMonitor.start()
+      LogcatMonitor.startVerbose()
+    } else {
+      LogcatMonitor.stopVerbose()
+    }
   }
 
   override fun getLogParts(verbose: Boolean): List<String> = FileSystem.listLogParts(verbose)

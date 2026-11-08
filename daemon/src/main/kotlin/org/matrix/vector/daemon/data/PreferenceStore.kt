@@ -2,6 +2,7 @@ package org.matrix.vector.daemon.data
 
 import android.content.ContentValues
 import android.database.sqlite.SQLiteDatabase
+import org.matrix.vector.daemon.BuildConfig
 import org.apache.commons.lang3.SerializationUtilsX
 
 private const val TAG = "VectorPreferenceStore"
@@ -91,8 +92,11 @@ object PreferenceStore {
   fun setStatusNotification(enabled: Boolean) =
       updateModulePref("lspd", 0, "config", "enable_status_notification", enabled)
 
+  // Off by default on a release build. The logcat reader is cheap but never idle, and what it
+  // writes exists for bug reports -- something a user opts into by turning this on. A debug build
+  // keeps the old default so its author still gets logs without asking.
   fun isVerboseLogEnabled(): Boolean =
-      getModulePrefs("lspd", 0, "config")["enable_verbose_log"] as? Boolean ?: true
+      getModulePrefs("lspd", 0, "config")["enable_verbose_log"] as? Boolean ?: BuildConfig.DEBUG
 
   fun setVerboseLog(enabled: Boolean) =
       updateModulePref("lspd", 0, "config", "enable_verbose_log", enabled)

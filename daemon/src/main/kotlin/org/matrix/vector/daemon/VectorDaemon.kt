@@ -114,7 +114,10 @@ object VectorDaemon {
     SystemServerService.registerProxyService(proxyServiceName)
 
     // Start Environmental Daemons
-    LogcatMonitor.start()
+    // Nothing reads the module log on a release install unless verbose logging was turned on:
+    // the reader thread is cheap but never idle, and the files it writes only ever leave the device
+    // in a bug report.
+    if (BuildConfig.DEBUG || ManagerService.isVerboseLogEnabled()) LogcatMonitor.start()
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) Dex2OatServer.start()
     CliSocketServer.start()
 

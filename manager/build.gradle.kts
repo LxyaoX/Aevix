@@ -127,6 +127,11 @@ dependencies {
     implementation(libs.okhttp.dnsoverhttps)
     implementation(libs.kotlinx.serialization.json)
 
+    // Android 12+ installs a baseline profile through this receiver and nothing else. AGP already
+    // merges assets/dexopt/baseline.prof out of the AndroidX libraries, but without this the file
+    // is inert on every device new enough to matter, and the first launch compiles cold.
+    implementation(libs.androidx.profileinstaller)
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.webkit)

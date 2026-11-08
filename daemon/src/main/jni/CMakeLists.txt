@@ -17,6 +17,15 @@ target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 target_link_libraries(${PROJECT_NAME} PRIVATE lsplant_static dex_builder_static android log)
 
+# The JNI functions are JNIEXPORT, which is visibility("default") on the NDK, so they stay; the
+# static libraries behind them do not need to be reachable from outside.
+set_target_properties(${PROJECT_NAME} PROPERTIES
+        CXX_VISIBILITY_PRESET hidden
+        C_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN ON)
+# Same for lsplant and the dex reader: JNIEXPORT names stay, everything from the archives goes.
+target_link_options(${PROJECT_NAME} PRIVATE -Wl,--exclude-libs,ALL)
+
 if (DEFINED DEBUG_SYMBOLS_PATH)
     message(STATUS "Debug symbols will be placed at ${DEBUG_SYMBOLS_PATH}")
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
