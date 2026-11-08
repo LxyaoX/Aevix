@@ -446,7 +446,7 @@ class ModuleAppService(private val loadedModule: LoadedModule) : IXposedService.
 
   override fun getApiVersion() = ensureModule().let { IXposedService.LIB_API }
 
-  override fun getFrameworkName() = ensureModule().let { BuildConfig.FRAMEWORK_NAME }
+  override fun getFrameworkName() = ensureModule().let { BuildConfig.FRAMEWORK_API_NAME }
 
   /**
    * The whole version, not just its name.

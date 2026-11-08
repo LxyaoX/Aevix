@@ -1,6 +1,6 @@
 {
 	"version": "v1.1-rc1",
 	"versionCode": 1000,
-	"zipUrl": "https://github.com/LxyaoX/Vector/releases/download/v1.1-rc1/Aevix-1.1-rc1-1000-Release.zip",
-	"changelog": "https://raw.githubusercontent.com/LxyaoX/Vector/master/zygisk/changelog.md"
+	"zipUrl": "https://github.com/LxyaoX/Aevix/releases/download/v1.1-rc1/Aevix-1.1-rc1-1000-Release.zip",
+	"changelog": "https://raw.githubusercontent.com/LxyaoX/Aevix/master/zygisk/changelog.md"
 }

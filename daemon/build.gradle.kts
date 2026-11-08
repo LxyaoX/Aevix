@@ -34,6 +34,13 @@ android {
         """"$defaultManagerPackageName"""",
     )
     buildConfigField("String", "FRAMEWORK_NAME", """"${rootProject.name}"""")
+    // What a module is told the framework is, which is not what the framework is called. A module
+    // reads this once, at init, to decide whether it can work here at all -- a whitelist of
+    // frameworks it supports -- and an unfamiliar name makes it return without registering a
+    // single hook. "LSPosed" is the name the API belongs to and the one every such whitelist
+    // carries; the brand belongs in module.prop, the notification and the log tags, all of which
+    // keep FRAMEWORK_NAME.
+    buildConfigField("String", "FRAMEWORK_API_NAME", """"LSPosed"""")
     buildConfigField("String", "MANAGER_INJECTED_PKG_NAME", """"$injectedPackageName"""")
     buildConfigField("int", "MANAGER_INJECTED_UID", """$injectedPackageUid""")
     buildConfigField("String", "VERSION_NAME", """"${versionNameProvider.get()}"""")

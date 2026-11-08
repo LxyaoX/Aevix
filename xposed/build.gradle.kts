@@ -28,6 +28,8 @@ android {
     defaultConfig {
         consumerProguardFiles("consumer-rules.pro")
         buildConfigField("String", "FRAMEWORK_NAME", """"${frameworkName}"""")
+        // See daemon/build.gradle.kts: this is what modules gate on, not the display name.
+        buildConfigField("String", "FRAMEWORK_API_NAME", """"LSPosed"""")
         buildConfigField("String", "VERSION_NAME", """"${versionNameProvider.get()}"""")
         buildConfigField("long", "VERSION_CODE", versionCodeProvider.get())
     }

@@ -75,7 +75,7 @@ class AevixContext(
         frozen = false
     }
 
-    override fun getFrameworkName(): String = BuildConfig.FRAMEWORK_NAME
+    override fun getFrameworkName(): String = BuildConfig.FRAMEWORK_API_NAME
 
     override fun getFrameworkVersion(): String = BuildConfig.VERSION_NAME
 
