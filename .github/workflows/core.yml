@@ -280,8 +280,12 @@ jobs:
             zygisk/release/Aevix-*-Debug.zip
 
       # Five is what a tester needs: enough to bisect a regression across a few days, few enough
-      # that the releases page is still mostly releases. Sorted by version code, which is the commit
-      # count and therefore monotonic, rather than by date, which reruns and reverts can disorder.
+      # that the releases page is still mostly releases. Ordered by creation time.
+      #
+      # It used to sort by version code, on the reasoning that the code was the commit count and so
+      # monotonic. That stopped being true when the code restarted at 1000: every new canary then
+      # sorted below the 31xx ones from before the restart and was deleted moments after it was
+      # published, leaving no release to download at all. Creation time cannot go backwards.
       - name: Keep only the five most recent canaries
         if: >-
           success() &&
@@ -291,11 +295,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # `grep` exits 1 when nothing matches, which under `pipefail` would fail the step on a
-          # repository that has no canaries yet. Collected first, then acted on.
-          tags=$(gh release list --limit 100 --json tagName --jq '.[].tagName' | grep '^canary-' || true)
+          # Collected first, so an empty repository or a `gh` that matches nothing exits cleanly
+          # instead of failing the step on `pipefail`.
+          tags=$(gh release list --limit 100 --json tagName,createdAt \
+            --jq '[.[] | select(.tagName | startswith("canary-"))] | sort_by(.createdAt) | reverse | .[].tagName')
           [ -n "$tags" ] || exit 0
-          echo "$tags" | sort -t- -k2 -n -r | tail -n +6 | while read -r old; do
+          echo "$tags" | tail -n +6 | while read -r old; do
             echo "Removing $old"
             gh release delete "$old" --yes --cleanup-tag
           done
