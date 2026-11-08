@@ -123,6 +123,12 @@ object VectorDaemon {
     // Wrapped, each of them: an exception here used to reach the uncaught handler and exit the
     // whole daemon, so a failure in the dex2oat socket loop cost the manager as well. One
     // subsystem failing should cost that subsystem.
+    // While this thread still has root. prepare() is what loads libdaemon.so out of daemon.apk,
+    // and everything below it runs after `sendToBridge` has dropped the main thread to euid 1000 --
+    // where /data/adb/modules cannot be opened at all. Deferring this to whoever touches
+    // LogcatMonitor first is what stopped the daemon from starting at all on a release build.
+    runCatching { LogcatMonitor.prepare() }
+        .onFailure { Log.e(TAG, "Logcat monitor failed to initialise", it) }
     runCatching { if (BuildConfig.DEBUG) LogcatMonitor.start() }
         .onFailure { Log.e(TAG, "Logcat reader failed to start", it) }
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

@@ -50,16 +50,36 @@ object LogcatMonitor {
   private val moduleLogs = ThreadSafeLRU()
   private val verboseLogs = ThreadSafeLRU()
 
-  init {
-    loadNativeLibrary()
-    FileSystem.moveLogDir() // Defined in FileSystem
+  private var initialized = false
 
-    // Meizu log_reject_level workaround
-    if (SystemProperties.getInt("persist.sys.log_reject_level", 0) > 0) {
-      SystemProperties.set("persist.sys.log_reject_level", "0")
+  /**
+   * Loads the JNI library and prepares the log directory, once.
+   *
+   * This used to be the class initializer, which was only safe as long as something at boot always
+   * touched this object early. [loadNativeLibrary] reads libdaemon.so straight out of daemon.apk,
+   * under /data/adb/modules -- a directory only root can enter -- and the main thread drops to
+   * euid 1000 in `sendToBridge`. Once the reader became lazy, a release build touched nothing here
+   * at boot, so the first touch was `stopVerbose()` after that drop: System.load failed, the
+   * exception reached the uncaught handler, and the process exited before it could log a line.
+   *
+   * Called explicitly at the top of `VectorDaemon.main`, while the daemon still has root. Every
+   * other entry point calls it too, because the cost of a second call is a boolean.
+   */
+  fun prepare() {
+    if (initialized) return
+    synchronized(this) {
+      if (initialized) return
+      loadNativeLibrary()
+      FileSystem.moveLogDir() // Defined in FileSystem
+
+      // Meizu log_reject_level workaround
+      if (SystemProperties.getInt("persist.sys.log_reject_level", 0) > 0) {
+        SystemProperties.set("persist.sys.log_reject_level", "0")
+      }
+
+      dumpPropsAndDmesg()
+      initialized = true
     }
-
-    dumpPropsAndDmesg()
   }
 
   @SuppressLint("UnsafeDynamicallyLoadedCode")
@@ -91,6 +111,7 @@ object LogcatMonitor {
   }
 
   fun start() {
+    prepare()
     if (isRunning) return
     isRunning = true
     VectorDaemon.scope.launch {
