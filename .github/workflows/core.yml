@@ -16,7 +16,9 @@ jobs:
     # once, as the stable release, never also as a canary. The tag build is a separate push event
     # (ref refs/tags/v*, not refs/heads/master) and is unaffected, so the release still ships.
     if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/master' && startsWith(github.event.head_commit.message, 'Release Vector')) }}
-    runs-on: ubuntu-latest
+    # Named outright rather than `ubuntu-latest`: this build depends on the image's NDK, cmake
+    # and JDK layout, so which image it is belongs in the file that depends on it.
+    runs-on: ubuntu-26.04
     # Needed to publish the canary prerelease below. Everything else here only reads.
     permissions:
       contents: write
@@ -99,10 +101,19 @@ jobs:
           echo 'org.gradle.parallel=true' >> ~/.gradle/gradle.properties
           echo 'org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8 -XX:+UseParallelGC' >> ~/.gradle/gradle.properties
 
+      # Downloaded rather than set up by an action: gha-setup-ninja's last release still declares a
+      # Node 20 entry point, which GitHub now forces onto Node 24 and warns about on every job.
+      # Ninja is one static binary, so there is nothing for an action to do that curl cannot.
       - name: Setup ninja
-        uses: seanmiddleditch/gha-setup-ninja@v6
-        with:
-          version: 1.13.2
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL -o /tmp/ninja.zip \
+            https://github.com/ninja-build/ninja/releases/download/v1.13.2/ninja-linux.zip
+          unzip -o -q /tmp/ninja.zip -d "$HOME/.local/bin"
+          chmod +x "$HOME/.local/bin/ninja"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/ninja" --version
 
       - name: Setup ccache
         uses: actions/cache@v6
