@@ -192,10 +192,13 @@ androidComponents {
                     // expands each payload with the xz applet Magisk, KernelSU and APatch all
                     // ship. Text another component reads before customize.sh runs -- module.prop,
                     // the scripts, cli -- stays readable in place.
-                    // LZMA2Options in this library has no PRESET_EXTREME: `xz -9e` is preset 9 with
-                    // the match finder's nice length at its maximum, which is what this sets.
+                    // Preset 6, not 9: the encoder wants about eleven times the dictionary size
+                    // in heap, so preset 9's 64 MiB dictionary is ~740 MB and the 23 MB debug
+                    // manager.apk killed the 2 GB Gradle daemon with "Java heap space". 8 MiB is
+                    // still larger than every payload this module carries, so the ratio does not
+                    // move; the nice length stays at its maximum, which is all `-9e` added.
                     val options =
-                        LZMA2Options(9).apply { niceLen = LZMA2Options.NICE_LEN_MAX }
+                        LZMA2Options(6).apply { niceLen = LZMA2Options.NICE_LEN_MAX }
                     val packable = injected.factory.fileTree()
                     packable.from(injected.moduleDir)
                     packable.include("**/*.apk", "**/*.dex", "**/*.so", "**/dex2oat")
