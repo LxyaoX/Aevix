@@ -19,7 +19,9 @@ set_target_properties(oat_hook PROPERTIES
         C_VISIBILITY_PRESET hidden
         VISIBILITY_INLINES_HIDDEN ON)
 # lsplt is a static library compiled without the preset, so its names would still be exported.
-target_link_options(oat_hook PRIVATE -Wl,--exclude-libs,ALL)
+# Nothing outside this library looks anything up in it, so nothing is exported at all.
+target_link_options(oat_hook PRIVATE
+        "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/oat_hook.map")
 
 if (DEFINED DEBUG_SYMBOLS_PATH)
     message(STATUS "Debug symbols will be placed at ${DEBUG_SYMBOLS_PATH}")

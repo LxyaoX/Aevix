@@ -23,8 +23,9 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
         CXX_VISIBILITY_PRESET hidden
         C_VISIBILITY_PRESET hidden
         VISIBILITY_INLINES_HIDDEN ON)
-# Same for lsplant and the dex reader: JNIEXPORT names stay, everything from the archives goes.
-target_link_options(${PROJECT_NAME} PRIVATE -Wl,--exclude-libs,ALL)
+# Same for lsplant and the dex reader: the Java_* JNIEXPORT names stay, everything else goes.
+target_link_options(${PROJECT_NAME} PRIVATE
+        "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/daemon.map")
 
 if (DEFINED DEBUG_SYMBOLS_PATH)
     message(STATUS "Debug symbols will be placed at ${DEBUG_SYMBOLS_PATH}")

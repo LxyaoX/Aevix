@@ -21,9 +21,12 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
         C_VISIBILITY_PRESET hidden
         VISIBILITY_INLINES_HIDDEN ON)
 # The static libraries linked in -- lsplant, dobby, xz, phmap -- were compiled without that
-# preset, so their symbols still arrive as default visibility and land in .dynsym anyway. This
-# drops every symbol that came from a static library and leaves only what this target defines.
-target_link_options(${PROJECT_NAME} PRIVATE -Wl,--exclude-libs,ALL)
+# preset, so their symbols still arrive as default visibility and land in .dynsym anyway. A
+# version script is what actually decides: the Java_* entry points that JNI looks up by name stay
+# exported (they live in the :native archive, so --exclude-libs,ALL would have hidden them and
+# every external fun would have failed to link), and everything else goes local.
+target_link_options(${PROJECT_NAME} PRIVATE
+        "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/exported.map")
 
 if (DEFINED DEBUG_SYMBOLS_PATH)
     message(STATUS "Debug symbols will be placed at ${DEBUG_SYMBOLS_PATH}")

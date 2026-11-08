@@ -1,0 +1,7 @@
+{
+  global:
+    Java_*;
+    zygisk_module_entry;
+  local:
+    *;
+};
