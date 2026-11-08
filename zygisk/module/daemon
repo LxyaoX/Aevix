@@ -49,5 +49,12 @@ fi
 
 [ "$debug" = "true" ] && log -p d -t "Vector" "Starting daemon $*"
 
-# Launch the daemon
-exec /system/bin/app_process $java_options /system/bin --nice-name=vectord org.matrix.vector.daemon.VectorDaemon "$@" >/dev/null 2>&1
+# Launch the daemon.
+#
+# app_process64 outright, not the plain `app_process` symlink: vendors have shipped that symlink
+# pointing at the 32-bit binary, and the JNI library this process loads out of daemon.apk is
+# arm64-v8a only -- a 32-bit runtime would fail System.load and die before it could log anything.
+# The fallback keeps a device that somehow lacks the explicit name working.
+app_process=/system/bin/app_process64
+[ -x "$app_process" ] || app_process=/system/bin/app_process
+exec "$app_process" $java_options /system/bin --nice-name=vectord org.matrix.vector.daemon.VectorDaemon "$@" >/dev/null 2>&1

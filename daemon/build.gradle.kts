@@ -28,13 +28,6 @@ plugins {
 
 android {
   defaultConfig {
-    // Both ABIs, unlike the rest of the module. /system/bin/app_process resolves to the 32-bit
-    // binary on some 64-bit devices, and this APK is where the daemon loads its JNI library
-    // from -- by ABI. Missing armeabi-v7a means System.load fails, the class initialiser throws,
-    // and the process dies before it can say why. libzygisk and the dex2oat binaries stay
-    // arm64-v8a only; this is the one library that has to be there for the process to exist.
-    ndk { abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a")) }
-
     buildConfigField(
         "String",
         "DEFAULT_MANAGER_PACKAGE_NAME",

@@ -134,9 +134,7 @@ void UNUSED(const T &...) {}
 #endif
 
 // Current ABI string
-#if defined(__arm__)
-#define ABI_STRING "arm"
-#elif defined(__aarch64__)
+#if defined(__aarch64__)
 #define ABI_STRING "arm64"
 #elif defined(__riscv)
 #define ABI_STRING "riscv64"
