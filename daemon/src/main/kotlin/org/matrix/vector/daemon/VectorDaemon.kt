@@ -120,9 +120,17 @@ object VectorDaemon {
     // bug report. Deliberately not consulting the preference here -- reading it opens the config
     // database, and that first open has to stay where it has always been, on the line that runs
     // before the main thread drops root.
-    if (BuildConfig.DEBUG) LogcatMonitor.start()
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) Dex2OatServer.start()
-    CliSocketServer.start()
+    // Wrapped, each of them: an exception here used to reach the uncaught handler and exit the
+    // whole daemon, so a failure in the dex2oat socket loop cost the manager as well. One
+    // subsystem failing should cost that subsystem.
+    runCatching { if (BuildConfig.DEBUG) LogcatMonitor.start() }
+        .onFailure { Log.e(TAG, "Logcat reader failed to start", it) }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+      runCatching { Dex2OatServer.start() }
+          .onFailure { Log.e(TAG, "dex2oat server failed to start", it) }
+    }
+    runCatching { CliSocketServer.start() }
+        .onFailure { Log.e(TAG, "CLI socket failed to start", it) }
 
     // Preload Framework DEX in the background
     scope.launch { FileSystem.getPreloadDex(ConfigCache.state.isDexObfuscateEnabled) }
