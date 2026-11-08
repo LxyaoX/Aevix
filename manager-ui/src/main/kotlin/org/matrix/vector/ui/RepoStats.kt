@@ -20,7 +20,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import org.matrix.vector.ui.locale.currentLocale
 import java.util.Locale
 
 /**
@@ -43,7 +42,7 @@ fun compactCount(value: Int, locale: Locale): String =
  * A standing fact about the project rather than a list item, so it is centred — that reads as a
  * footer rather than one more left-aligned row. Both hosts' Home screens show the same thing from the
  * same GitHub repository over the same layout: this is Vector's footer, and LSPatch renders it too.
- * Counts format in the in-app locale via [currentLocale], so the language override reaches them.
+ * Counts format in the device locale, which is the only one the app has now.
  */
 @Composable
 fun RepoStatsRow(
@@ -58,7 +57,7 @@ fun RepoStatsRow(
         modifier = modifier.fillMaxWidth().clickable { onClick() },
         contentAlignment = Alignment.Center,
     ) {
-        val locale = currentLocale()
+        val locale = Locale.getDefault()
         Row(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically,

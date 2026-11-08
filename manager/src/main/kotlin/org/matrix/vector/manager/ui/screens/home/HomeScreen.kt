@@ -84,15 +84,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import java.util.Locale
 import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.launch
 import org.matrix.vector.manager.ui.theme.LocalizedOverlay
 import org.matrix.vector.manager.R
-import org.matrix.vector.manager.ui.theme.CROWDIN_URL
-import org.matrix.vector.manager.ui.theme.VectorLocaleController
-import org.matrix.vector.ui.locale.LanguageSheet
-import org.matrix.vector.ui.locale.currentLocale
 import org.matrix.vector.manager.di.ServiceLocator
 import org.matrix.vector.ui.SharedAlertDialog
 import org.matrix.vector.ui.SharedSnackbarHost
@@ -159,7 +156,6 @@ fun HomeScreen(
     val context = LocalContext.current
     var showSplash by rememberSaveable { mutableStateOf(false) }
     var showAppearance by rememberSaveable { mutableStateOf(false) }
-    var showLanguage by rememberSaveable { mutableStateOf(false) }
     // Answered or waved away once per visit, not once per return to Home. Saved so that a rotation
     // does not put a dialog back in front of someone who has just dismissed it.
     var showLauncherPrompt by rememberSaveable { mutableStateOf(true) }
@@ -333,8 +329,6 @@ fun HomeScreen(
                 },
                 appearanceLabel = stringResource(R.string.appearance_title),
                 onOpenAppearance = { showAppearance = true },
-                languageLabel = stringResource(R.string.language_title),
-                onOpenLanguage = { showLanguage = true },
                 onBrandTap = ::onBrandTap,
                 detail = { contentColor ->
                     val detailText =
@@ -371,15 +365,6 @@ fun HomeScreen(
                         },
             )
         }
-    }
-
-    if (showLanguage) {
-        LanguageSheet(
-            controller = VectorLocaleController,
-            onDismiss = { showLanguage = false },
-            onHelpTranslate = { open(CROWDIN_URL) },
-            onOpenUrl = ::open,
-        )
     }
 
     if (showAppearance) {
@@ -582,7 +567,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.communitySection(
 
     if (items.isNotEmpty()) {
         item(key = "history-foot") {
-            val locale = currentLocale()
+            val locale = Locale.getDefault()
             // Only claimed when the whole project is in hand — the count from the `Link` header is
             // every commit on the default branch, ever, so holding that many means the row below is
             // genuinely the first one. A window that merely reached its own start says nothing,
@@ -669,7 +654,7 @@ private fun QuarterHeadline(feed: CommunityFeed, windowChanged: Boolean) {
                 )
             val by = context.resources.getQuantityString(R.plurals.home_people_count, people, people)
             val since =
-                DateFormat.getDateInstance(DateFormat.MEDIUM, currentLocale())
+                DateFormat.getDateInstance(DateFormat.MEDIUM, Locale.getDefault())
                     .format(Date(feed.windowStartEpochSeconds * 1000))
             Text(
                 text = "$commits $by  ·  ${stringResource(R.string.home_since, since)}",

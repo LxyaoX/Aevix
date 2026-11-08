@@ -44,9 +44,9 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import java.util.Locale
 import java.util.Calendar
 import org.matrix.vector.manager.R
-import org.matrix.vector.ui.locale.currentLocale
 import org.matrix.vector.manager.data.github.TimelineCommit
 import org.matrix.vector.ui.theme.Mono
 
@@ -404,7 +404,7 @@ fun InstalledMarkerRow(
  */
 @Composable
 fun MonthMarkerRow(month: Int, year: Int?, commits: Int, people: Int, modifier: Modifier = Modifier) {
-    val locale = currentLocale()
+    val locale = Locale.getDefault()
     val label =
         remember(month, year, locale) {
             val cal = Calendar.getInstance(locale).apply { set(Calendar.MONTH, month) }

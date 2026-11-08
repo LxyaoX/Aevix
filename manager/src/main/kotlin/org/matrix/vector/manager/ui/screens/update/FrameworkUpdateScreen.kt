@@ -4,10 +4,10 @@ import org.matrix.vector.ui.R as UiR
 import org.matrix.vector.manager.data.repository.FrameworkUpdateState
 import org.matrix.vector.manager.data.repository.divergesFrom
 import androidx.compose.foundation.clickable
-import org.matrix.vector.ui.locale.currentLocale
 import org.matrix.vector.manager.data.repository.ReleaseDirection
 import org.matrix.vector.manager.data.github.FrameworkRelease
 import org.matrix.vector.manager.data.github.GitHubRepository
+import java.util.Locale
 import java.util.Date
 import java.text.DateFormat
 import androidx.compose.runtime.setValue
@@ -528,7 +528,7 @@ private fun VersionsSheet(
     onSelect: (FrameworkRelease) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val locale = currentLocale()
+    val locale = Locale.getDefault()
     // Resolved once, out of the map below: stringResource is @Composable and cannot be called from
     // a plain transform lambda.
     val heading = stringResource(R.string.update_versions)

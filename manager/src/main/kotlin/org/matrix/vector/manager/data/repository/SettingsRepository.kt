@@ -165,21 +165,6 @@ class SettingsRepository(context: Context) : StoreSettings, NetworkSettings {
     }
 
     /**
-     * The language the app is shown in, as a BCP-47 tag, or empty for whatever the system says.
-     *
-     * Not `setApplicationLocales`: that API is keyed on an installed package, and parasitically
-     * this one is never installed. Asking the framework would change the host's language or
-     * nothing at all. See LocalizedContent for how the override is applied instead.
-     */
-    private val _appLocale = MutableStateFlow(prefs.getString("app_locale", "") ?: "")
-    val appLocale: StateFlow<String> = _appLocale.asStateFlow()
-
-    fun setAppLocale(tag: String) {
-        prefs.edit().putString("app_locale", tag).apply()
-        _appLocale.value = tag
-    }
-
-    /**
      * Modules the reader has told us to stop nagging about.
      *
      * In the manager's own preferences rather than in the daemon's module database, because this is

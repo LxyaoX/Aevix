@@ -4,7 +4,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import java.util.Locale
-import org.matrix.vector.ui.locale.currentLocale
 
 // compactCount for the project footer now lives in the shared lib as org.matrix.vector.ui.compactCount
 // (used by the shared RepoStatsRow); it was lifted out of here so both apps' Home footers share it.
@@ -20,7 +19,7 @@ import org.matrix.vector.ui.locale.currentLocale
 @Composable
 fun exactTime(epochSeconds: Long): String {
     val context = LocalContext.current
-    val locale = currentLocale()
+    val locale = Locale.getDefault()
     // Built once per language rather than once per row. Formatting in place would cost two
     // Calendars, a time format, an ICU pattern lookup and a SimpleDateFormat for *every commit on
     // screen, on every recomposition* — invisible on a feed of a hundred, not on one that holds

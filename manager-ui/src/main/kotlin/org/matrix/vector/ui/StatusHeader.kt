@@ -28,7 +28,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PriorityHigh
 import androidx.compose.material.icons.rounded.Settings
@@ -111,8 +110,6 @@ fun StatusHeader(
     onOpenStatus: (() -> Unit)? = null,
     appearanceLabel: String? = null,
     onOpenAppearance: (() -> Unit)? = null,
-    languageLabel: String? = null,
-    onOpenLanguage: (() -> Unit)? = null,
     onBrandTap: (() -> Unit)? = null,
     detail: (@Composable (contentColor: Color) -> Unit)? = null,
 ) {
@@ -209,10 +206,9 @@ fun StatusHeader(
                                 color = onContainer,
                             )
                         }
-                        // Neither is a gear. What they open governs how the app presents itself —
-                        // its colours and its language — rather than what it does. Shown only when
-                        // the host wires them.
-                        if (onOpenAppearance != null || onOpenLanguage != null) {
+                        // Not a gear: it governs how the app presents itself — its colours —
+                        // rather than what it does. Shown only when the host wires it.
+                        if (onOpenAppearance != null) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 if (onOpenAppearance != null) {
                                     IconButton(
@@ -222,19 +218,6 @@ fun StatusHeader(
                                         Icon(
                                             Icons.Rounded.Palette,
                                             contentDescription = appearanceLabel,
-                                            tint = onContainer,
-                                            modifier = Modifier.size(21.dp),
-                                        )
-                                    }
-                                }
-                                if (onOpenLanguage != null) {
-                                    IconButton(
-                                        onClick = onOpenLanguage,
-                                        modifier = Modifier.size(ICON_BUTTON),
-                                    ) {
-                                        Icon(
-                                            Icons.Rounded.Language,
-                                            contentDescription = languageLabel,
                                             tint = onContainer,
                                             modifier = Modifier.size(21.dp),
                                         )
