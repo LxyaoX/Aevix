@@ -10,12 +10,12 @@ on:
 
 jobs:
   build:
-    # A "Release Vector …" commit is cut straight to a `v*` tag, and the tag build below is what
+    # A "Release Aevix …" commit is cut straight to a `v*` tag, and the tag build below is what
     # publishes it — as the stable, `--latest` release. Skip the master-push run for that one commit
     # so the very same code does not also go out as a canary prerelease: a release must reach users
     # once, as the stable release, never also as a canary. The tag build is a separate push event
     # (ref refs/tags/v*, not refs/heads/master) and is unaffected, so the release still ships.
-    if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/master' && startsWith(github.event.head_commit.message, 'Release Vector')) }}
+    if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/master' && startsWith(github.event.head_commit.message, 'Release Aevix')) }}
     # Named outright rather than `ubuntu-latest`: this build depends on the image's NDK, cmake
     # and JDK layout, so which image it is belongs in the file that depends on it.
     runs-on: ubuntu-26.04
@@ -29,8 +29,8 @@ jobs:
       # branch came from a fork, and the checked-out HEAD is an ephemeral merge commit that exists
       # nowhere and cannot be looked up by anyone who reads it off a device. Both head.* values are
       # null outside a pull request, where the defaults are already right.
-      VECTOR_BUILD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
-      VECTOR_BUILD_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+      AEVIX_BUILD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+      AEVIX_BUILD_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
       CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
       CCACHE_NOHASHDIR: "true"
       CCACHE_HARDLINK: "true"
@@ -140,31 +140,34 @@ jobs:
         if: success()
         id: prepareArtifact
         run: |
-          zygiskReleaseName=`ls zygisk/release/Vector-v*-Release.zip | awk -F '(/|.zip)' '{print $3}'` && echo "zygiskReleaseName=$zygiskReleaseName" >> $GITHUB_OUTPUT
-          zygiskDebugName=`ls zygisk/release/Vector-v*-Debug.zip | awk -F '(/|.zip)' '{print $3}'` && echo "zygiskDebugName=$zygiskDebugName" >> $GITHUB_OUTPUT
+          zygiskReleaseName=`ls zygisk/release/Aevix-*-Release.zip | awk -F '(/|.zip)' '{print $3}'` && echo "zygiskReleaseName=$zygiskReleaseName" >> $GITHUB_OUTPUT
+          zygiskDebugName=`ls zygisk/release/Aevix-*-Debug.zip | awk -F '(/|.zip)' '{print $3}'` && echo "zygiskDebugName=$zygiskDebugName" >> $GITHUB_OUTPUT
           # Read the two numbers the way the build script produced them rather than by splitting
           # the archive name on hyphens. A canary is tagged `canary-<build>`, which put a third
           # hyphen in the next archive name, so `$3` returned the tag's own number instead of the
           # build's: every canary after the first reused one number and replaced one release.
-          versionCode=`git rev-list --count refs/remotes/origin/master`
+          # 1000 restarts the version code with the rename to Aevix; build.gradle.kts has the
+          # same arithmetic in versionCodeProvider and the two have to agree. 3140 is the commit
+          # count on master at the commit that switched the scheme.
+          versionCode=$(( 1000 + $(git rev-list --count refs/remotes/origin/master) - 3140 ))
           versionName=`git tag --list 'v[0-9]*' --sort=-v:refname | head -1 | sed 's/^v//'`
-          [ -n "$versionName" ] || versionName=1.0
+          [ -n "$versionName" ] || versionName=1.1-rc1
           echo "versionCode=$versionCode" >> $GITHUB_OUTPUT
           echo "versionName=$versionName" >> $GITHUB_OUTPUT
-          unzip zygisk/release/Vector-v*-Release.zip -d Vector-Release
-          unzip zygisk/release/Vector-v*-Debug.zip -d Vector-Debug
+          unzip zygisk/release/Aevix-*-Release.zip -d Aevix-Release
+          unzip zygisk/release/Aevix-*-Debug.zip -d Aevix-Debug
 
       - name: Upload zygisk release
         uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.prepareArtifact.outputs.zygiskReleaseName }}
-          path: "./Vector-Release/*"
+          path: "./Aevix-Release/*"
 
       - name: Upload zygisk debug
         uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.prepareArtifact.outputs.zygiskDebugName }}
-          path: "./Vector-Debug/*"
+          path: "./Aevix-Debug/*"
 
       # One entry per module that minifies. `app` was the old manager and has not existed since
       # #796, so the manager's mapping — the one an obfuscated stack trace from a user actually
@@ -208,17 +211,17 @@ jobs:
         run: |
           set -euo pipefail
           # `%s` arguments, never the format string, so a `%` anywhere in the changelog is literal.
-          notes=$(printf '# 🎉 Vector %s 🎉\n\n%s\n' "${TAG#v}" "$(cat zygisk/changelog.md)")
+          notes=$(printf '# 🎉 Aevix %s 🎉\n\n%s\n' "${TAG#v}" "$(cat zygisk/changelog.md)")
 
           # Recreated rather than edited so a re-run replaces the assets instead of appending a
           # second copy. No `--cleanup-tag`: the release is rebuilt, the pushed release tag is kept.
           gh release delete "$TAG" --yes 2>/dev/null || true
           gh release create "$TAG" \
             --latest \
-            --title "Vector ${TAG}" \
+            --title "Aevix ${TAG}" \
             --notes "$notes" \
-            zygisk/release/Vector-v*-Release.zip \
-            zygisk/release/Vector-v*-Debug.zip
+            zygisk/release/Aevix-*-Release.zip \
+            zygisk/release/Aevix-*-Debug.zip
 
       # --- canary distribution ---------------------------------------------------------------
       #
@@ -258,8 +261,8 @@ jobs:
 
           | Build | Use it when |
           | :-- | :-- |
-          | \`Vector-${VERSION_NAME}-${VERSION_CODE}-Debug.zip\` | You are chasing a bug. Far more logging, and the build maintainers ask for in reports. |
-          | \`Vector-${VERSION_NAME}-${VERSION_CODE}-Release.zip\` | You just want the newest code. |
+          | \`Aevix-${VERSION_NAME}-${VERSION_CODE}-Debug.zip\` | You are chasing a bug. Far more logging, and the build maintainers ask for in reports. |
+          | \`Aevix-${VERSION_NAME}-${VERSION_CODE}-Release.zip\` | You just want the newest code. |
 
           Only the five most recent canaries are kept.
           EOF
@@ -271,10 +274,10 @@ jobs:
           gh release create "$tag" \
             --prerelease \
             --target "${{ github.sha }}" \
-            --title "Vector ${VERSION_NAME} canary ${VERSION_CODE}" \
+            --title "Aevix ${VERSION_NAME} canary ${VERSION_CODE}" \
             --notes "$notes" \
-            zygisk/release/Vector-v*-Release.zip \
-            zygisk/release/Vector-v*-Debug.zip
+            zygisk/release/Aevix-*-Release.zip \
+            zygisk/release/Aevix-*-Debug.zip
 
       # Five is what a tester needs: enough to bisect a regression across a few days, few enough
       # that the releases page is still mostly releases. Sorted by version code, which is the commit

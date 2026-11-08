@@ -1,6 +1,6 @@
 # External Dependencies
 
-This directory contains all the external dependencies required to build the Vector framework.
+This directory contains all the external dependencies required to build the Aevix framework.
 They are included as git submodules to ensure version consistency and timely updating.
 
 ## Native dependencies

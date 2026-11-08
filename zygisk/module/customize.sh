@@ -61,7 +61,7 @@ extract() {
 extract_xz() {
   local file="$1"
   local dir="$2"
-  # The entry keeps its path unless a name is given: framework/vector.dex has to land in
+  # The entry keeps its path unless a name is given: framework/aevix.dex has to land in
   # $MODPATH/framework/, which is where the daemon opens it from, and only the lib/ and bin/
   # payloads are flattened, because those are renamed to <abi>.so and dex2oat64 on purpose.
   local name="${3:-$file}"
@@ -106,13 +106,13 @@ if ! command -v xz >/dev/null 2>&1; then
 fi
 
 VERSION=$(grep_prop version "${TMPDIR}/module.prop")
-ui_print "- Vector version ${VERSION}"
+ui_print "- Aevix version ${VERSION}"
 
 # Disable existing LSPosed installation
 LSPOSED_DIR="/data/adb/modules/zygisk_lsposed"
 if [ -d "$LSPOSED_DIR" ]; then
     ui_print "*********************************************************"
-    ui_print "LSPosed installation detected, disabling it for Vector"
+    ui_print "LSPosed installation detected, disabling it for Aevix"
     touch "$LSPOSED_DIR/disable"
     ui_print "*********************************************************"
 fi
@@ -134,7 +134,7 @@ for file in module.prop action.sh service.sh uninstall.sh sepolicy.rule cli daem
 done
 
 ui_print "- Extracting compressed payloads"
-extract_xz "framework/vector.dex" "$MODPATH"
+extract_xz "framework/aevix.dex" "$MODPATH"
 extract_xz "daemon.apk" "$MODPATH"
 extract_xz "manager.apk" "$MODPATH"
 
@@ -173,4 +173,4 @@ if [ "$(grep_prop ro.maple.enable)" = "1" ]; then
     echo "ro.maple.enable=0" >>"$MODPATH/system.prop"
 fi
 
-ui_print "- Welcome to Vector!"
+ui_print "- Welcome to Aevix!"

@@ -1,6 +1,6 @@
-# VectorDex2Oat
+# AevixDex2Oat
 
-VectorDex2Oat is a specialized wrapper and instrumentation suite for the Android `dex2oat` (Ahead-of-Time compiler) binary. It is designed to intercept the compilation process, force specific compiler behaviors (specifically disabling method inlining), and transparently spoof the resulting OAT metadata to hide the presence of the wrapper.
+AevixDex2Oat is a specialized wrapper and instrumentation suite for the Android `dex2oat` (Ahead-of-Time compiler) binary. It is designed to intercept the compilation process, force specific compiler behaviors (specifically disabling method inlining), and transparently spoof the resulting OAT metadata to hide the presence of the wrapper.
 
 ## Overview
 
@@ -21,7 +21,7 @@ This project consists of two primary components:
 
 ### The Wrapper [dex2oat.cpp](src/main/cpp/dex2oat.cpp)
 The wrapper acts as a "man-in-the-middle" for the compiler. When called by the system, it
-1.  connects to a predefined Unix socket (the stub name `5291374ceda0...` will be replaced during installation of `Vector`);
+1.  connects to a predefined Unix socket (the stub name `5291374ceda0...` will be replaced during installation of `Aevix`);
 2.  identifies the target architecture (32-bit vs 64-bit) and debug status;
 3.  receives File Descriptors (FDs) for both the original `dex2oat` binary and the `oat_hook` library;
 4.  reconstructs the command line, replacing the wrapper path with the original binary path and appending the "no-inline" flags;

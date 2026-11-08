@@ -44,10 +44,10 @@ if [ ! -S "/dev/socket/zygote" ]; then
     sleep 0.1
     wait_count=$((wait_count + 1))
   done
-  [ "$debug" = "true" ] && log -p v -t "Vector" "zygote started"
+  [ "$debug" = "true" ] && log -p v -t "Aevix" "zygote started"
 fi
 
-[ "$debug" = "true" ] && log -p d -t "Vector" "Starting daemon $*"
+[ "$debug" = "true" ] && log -p d -t "Aevix" "Starting daemon $*"
 
 # Launch the daemon.
 #
@@ -57,4 +57,4 @@ fi
 # The fallback keeps a device that somehow lacks the explicit name working.
 app_process=/system/bin/app_process64
 [ -x "$app_process" ] || app_process=/system/bin/app_process
-exec "$app_process" $java_options /system/bin --nice-name=vectord org.matrix.vector.daemon.VectorDaemon "$@" >/dev/null 2>&1
+exec "$app_process" $java_options /system/bin --nice-name=Aevixd org.aevix.daemon.AevixDaemon "$@" >/dev/null 2>&1

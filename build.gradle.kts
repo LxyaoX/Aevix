@@ -59,7 +59,7 @@ abstract class GitLatestTagValueSource : ValueSource<String, ValueSourceParamete
         return if (result.exitValue == 0 && output.toString().isNotBlank()) {
             output.toString().lineSequence().first().removePrefix("v")
         } else {
-            "1.0"
+            "1.1-rc1"
         }
     }
 }
@@ -82,7 +82,7 @@ abstract class GitLatestTagValueSource : ValueSource<String, ValueSourceParamete
  * The separator says which kind of "where" follows, because they mean opposite things about whether
  * the commit describes the binary:
  *
- * *On GitHub Actions*, `93d66473-JingMatrix-Vector` — the commit, then the repository the code came
+ * *On GitHub Actions*, `93d66473-JingMatrix-Aevix` — the commit, then the repository the code came
  * from. Forks build the same code from the same commits, so the hash alone identifies a *revision*
  * and not a *build*, and a fork's artifact was indistinguishable from ours.
  *
@@ -98,7 +98,7 @@ abstract class GitLatestTagValueSource : ValueSource<String, ValueSourceParamete
  * up by anyone who reads it off a device, and is gone once the run is. The commit that was pushed
  * is the one that identifies the build.
  *
- * So the workflow passes both in: `VECTOR_BUILD_REPOSITORY` and `VECTOR_BUILD_COMMIT`, each taken
+ * So the workflow passes both in: `AEVIX_BUILD_REPOSITORY` and `AEVIX_BUILD_COMMIT`, each taken
  * from `github.event.pull_request.head.*` when there is a pull request and from the ordinary
  * default when there is not — outside a pull request the two agree anyway. Absent either, this
  * falls back to what the environment says and to `HEAD`, which covers a workflow too old to set
@@ -206,7 +206,19 @@ abstract class GitCommitHashValueSource : ValueSource<String, GitCommitHashValue
 // the string here and the property name have to stay in step by hand now.
 //
 // This defers the execution of the git commands and allows Gradle to cache the results.
-val versionCodeProvider = providers.of(GitCommitCountValueSource::class.java) {}
+// Version codes restart at 1000 with the rename to Aevix and climb by one per commit from
+// there, so a canary still gets a number of its own. 3140 is the commit count on master at the
+// commit that switched the scheme: that commit reads as 1000, and the one after it as 1001.
+//
+// `prepareArtifact` in .github/workflows/core.yml repeats this arithmetic for the canary tag.
+// Git is not available to the workflow's own reporting any other way, and the archive name has
+// hyphens of its own now that the version name carries one, so the two have to agree by hand.
+val versionCodeBase = 1000
+val versionCodeBaseCommitCount = 3140
+val versionCodeProvider =
+    providers.of(GitCommitCountValueSource::class.java) {}.map { count ->
+        (versionCodeBase + (count.toInt() - versionCodeBaseCommitCount).coerceAtLeast(0)).toString()
+    }
 val versionHashProvider =
     providers.of(GitCommitHashValueSource::class.java) {
         // Set on every GitHub Actions runner and on nothing else, so the presence of either is
@@ -214,17 +226,17 @@ val versionHashProvider =
         // the branch that was pushed; GitHub's defaults name the run that built it.
         parameters.buildRepository.set(
             providers
-                .environmentVariable("VECTOR_BUILD_REPOSITORY")
+                .environmentVariable("AEVIX_BUILD_REPOSITORY")
                 .orElse(providers.environmentVariable("GITHUB_REPOSITORY"))
                 .orElse("")
         )
-        parameters.buildCommit.set(providers.environmentVariable("VECTOR_BUILD_COMMIT").orElse(""))
+        parameters.buildCommit.set(providers.environmentVariable("AEVIX_BUILD_COMMIT").orElse(""))
     }
 val versionNameProvider = providers.of(GitLatestTagValueSource::class.java) {}
 
 val injectedPackageName = "com.android.shell"
 val injectedPackageUid = 2000
-val defaultManagerPackageName = "org.matrix.vector.manager"
+val defaultManagerPackageName = "org.aevix.manager"
 
 val androidTargetSdkVersion = 37
 val androidMinSdkVersion = 27
@@ -297,7 +309,7 @@ subprojects {
                 val args =
                     listOf(
                         "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-                        "-DVECTOR_ROOT=${rootDir.absolutePath}",
+                        "-DAEVIX_ROOT=${rootDir.absolutePath}",
                         // Enforce 16 KB page size alignment for Android 15+ compatibility
                         "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384",
                         "-DCMAKE_EXE_LINKER_FLAGS=-Wl,-z,max-page-size=16384",

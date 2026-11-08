@@ -1,7 +1,7 @@
 plugins { alias(libs.plugins.agp.lib) }
 
 android {
-    namespace = "org.matrix.vector.dex2oat"
+    namespace = "org.aevix.dex2oat"
 
     androidResources { enable = false }
 

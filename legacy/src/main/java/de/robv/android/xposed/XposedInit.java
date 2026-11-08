@@ -18,14 +18,14 @@ import android.os.IBinder;
 import android.os.Process;
 import android.util.ArrayMap;
 
-import org.matrix.vector.impl.core.VectorDeopter;
-import org.matrix.vector.impl.core.VectorModuleManager;
-import org.matrix.vector.impl.core.VectorServiceClient;
-import org.matrix.vector.impl.utils.VectorModuleClassLoader;
-import org.matrix.vector.nativebridge.NativeAPI;
-import org.matrix.vector.nativebridge.ResourcesHook;
-import org.matrix.vector.ipc.ModuleCode;
-import org.matrix.vector.util.Log;
+import org.aevix.impl.core.AevixDeopter;
+import org.aevix.impl.core.AevixModuleManager;
+import org.aevix.impl.core.AevixServiceClient;
+import org.aevix.impl.utils.AevixModuleClassLoader;
+import org.aevix.nativebridge.NativeAPI;
+import org.aevix.nativebridge.ResourcesHook;
+import org.aevix.ipc.ModuleCode;
+import org.aevix.util.Log;
 
 import java.io.File;
 import java.lang.ref.WeakReference;
@@ -54,7 +54,7 @@ public final class XposedInit {
             return;
         }
 
-        VectorDeopter.deoptResourceMethods();
+        AevixDeopter.deoptResourceMethods();
 
         if (!ResourcesHook.initXResourcesNative()) {
             Log.e(TAG, "Cannot hook resources");
@@ -204,7 +204,7 @@ public final class XposedInit {
     }
 
     public static void loadLegacyModules() {
-        var moduleList = VectorServiceClient.INSTANCE.getLegacyModules();
+        var moduleList = AevixServiceClient.INSTANCE.getLegacyModules();
         moduleList.forEach(module -> {
             var apk = module.apkPath;
             var name = module.packageName;
@@ -225,9 +225,9 @@ public final class XposedInit {
             return;
         }
         var packages = (ArrayMap<?, ?>) XposedHelpers.getObjectField(at, "mPackages");
-        VectorServiceClient.INSTANCE.getModules().forEach(module -> {
+        AevixServiceClient.INSTANCE.getModules().forEach(module -> {
             loadedModules.put(module.packageName, Optional.empty());
-            if (!VectorModuleManager.INSTANCE.loadModule(module, startsSystemServer, VectorServiceClient.INSTANCE.getProcessName())) {
+            if (!AevixModuleManager.INSTANCE.loadModule(module, startsSystemServer, AevixServiceClient.INSTANCE.getProcessName())) {
                 loadedModules.remove(module.packageName);
             } else {
                 packages.remove(module.packageName);
@@ -305,7 +305,7 @@ public final class XposedInit {
         var librarySearchPath = sb.toString();
 
         var initLoader = XposedInit.class.getClassLoader();
-        var mcl = VectorModuleClassLoader.loadApk(apk, file.preLoadedDexes, librarySearchPath, initLoader);
+        var mcl = AevixModuleClassLoader.loadApk(apk, file.preLoadedDexes, librarySearchPath, initLoader);
 
         try {
             if (mcl.loadClass(XposedBridge.class.getName()).getClassLoader() != initLoader) {

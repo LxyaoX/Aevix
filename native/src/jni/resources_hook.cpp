@@ -126,7 +126,7 @@ static bool PrepareSymbols() {
 /**
  * @brief JNI entry point to initialize the entire native resources hook.
  */
-VECTOR_DEF_NATIVE_METHOD(jboolean, ResourcesHook, initXResourcesNative) {
+AEVIX_DEF_NATIVE_METHOD(jboolean, ResourcesHook, initXResourcesNative) {
     const auto x_resources_class_name = GetXResourcesClassName();
     if (x_resources_class_name.empty()) {
         return JNI_FALSE;
@@ -174,7 +174,7 @@ VECTOR_DEF_NATIVE_METHOD(jboolean, ResourcesHook, initXResourcesNative) {
  * @brief Removes the 'final' modifier from a Java class at runtime.
  * This allows the framework to create subclasses of what are normally final classes.
  */
-VECTOR_DEF_NATIVE_METHOD(jboolean, ResourcesHook, makeInheritable, jclass target_class) {
+AEVIX_DEF_NATIVE_METHOD(jboolean, ResourcesHook, makeInheritable, jclass target_class) {
     if (lsplant::MakeClassInheritable(env, target_class)) {
         return JNI_TRUE;
     }
@@ -228,7 +228,7 @@ jobject BuildDummySuperClassLoader(JNIEnv *env, jobject parent, const char *res_
         .release();
 }
 
-VECTOR_DEF_NATIVE_METHOD(jobject, ResourcesHook, buildDummyClassLoader, jobject parent,
+AEVIX_DEF_NATIVE_METHOD(jobject, ResourcesHook, buildDummyClassLoader, jobject parent,
                          jstring resource_super_class, jstring typed_array_super_class) {
     return BuildDummySuperClassLoader(env, parent,
                                       lsplant::JUTFString(env, resource_super_class).get(),
@@ -378,7 +378,7 @@ static uint32_t *AttributeNameSlot(void *parser, const android::ResStringPool *s
  * @param origRes The original XResources object.
  * @param repRes The replacement Resources object.
  */
-VECTOR_DEF_NATIVE_METHOD(void, ResourcesHook, rewriteXmlReferencesNative, jlong parserPtr,
+AEVIX_DEF_NATIVE_METHOD(void, ResourcesHook, rewriteXmlReferencesNative, jlong parserPtr,
                          jobject origRes, jobject repRes) {
     // Cast the long from Java back to a native C++ pointer.
     // This is dangerous and assumes the Java code provides a valid pointer.
@@ -478,13 +478,13 @@ leave:
 
 // JNI method registration table.
 static JNINativeMethod gMethods[] = {
-    VECTOR_NATIVE_METHOD(ResourcesHook, initXResourcesNative, "()Z"),
-    VECTOR_NATIVE_METHOD(ResourcesHook, makeInheritable, "(Ljava/lang/Class;)Z"),
-    VECTOR_NATIVE_METHOD(ResourcesHook, buildDummyClassLoader,
+    AEVIX_NATIVE_METHOD(ResourcesHook, initXResourcesNative, "()Z"),
+    AEVIX_NATIVE_METHOD(ResourcesHook, makeInheritable, "(Ljava/lang/Class;)Z"),
+    AEVIX_NATIVE_METHOD(ResourcesHook, buildDummyClassLoader,
                          "(Ljava/lang/ClassLoader;Ljava/lang/String;Ljava/lang/"
                          "String;)Ljava/lang/ClassLoader;"),
-    VECTOR_NATIVE_METHOD(ResourcesHook, rewriteXmlReferencesNative,
+    AEVIX_NATIVE_METHOD(ResourcesHook, rewriteXmlReferencesNative,
                          "(JLjava/lang/Object;Landroid/content/res/Resources;)V")};
 
-void RegisterResourcesHook(JNIEnv *env) { REGISTER_VECTOR_NATIVE_METHODS(ResourcesHook); }
+void RegisterResourcesHook(JNIEnv *env) { REGISTER_AEVIX_NATIVE_METHODS(ResourcesHook); }
 }  // namespace vector::native::jni

@@ -1,6 +1,6 @@
 <div align="center">
 
-# Vector Framework
+# Aevix Framework
 
 **A high-performance ART hooking framework for modern Android**
 
@@ -15,7 +15,7 @@
 
 ### Introduction
 
-Vector is a Zygisk module providing an ART hooking framework that maintains API consistency with the original Xposed. It is engineered on top of [LSPlant](https://github.com/JingMatrix/LSPlant) to deliver a stable, native-level instrumentation environment.
+Aevix is a Zygisk module providing an ART hooking framework that maintains API consistency with the original Xposed. It is engineered on top of [LSPlant](https://github.com/JingMatrix/LSPlant) to deliver a stable, native-level instrumentation environment.
 
 The framework allows modules to modify system and application behavior in-memory. Because no APK files are modified, changes are non-destructive, easily reversible via reboot, and compatible across various ROMs and Android versions.
 
@@ -23,7 +23,7 @@ The framework allows modules to modify system and application behavior in-memory
 
 ### Compatibility
 
-Vector supports devices running **Android 8.1 through Android 17 Beta**.
+Aevix supports devices running **Android 8.1 through Android 17 Beta**.
 
 > [!TIP]
 > This framework requires a recent installation of Magisk or KernelSU with Zygisk enabled.
@@ -78,17 +78,17 @@ If you encounter issues or wish to help improve the project, please refer to the
 
 ### Developer Resources
 
-Vector supports both legacy and modern hooking standards to ensure broad module compatibility.
+Aevix supports both legacy and modern hooking standards to ensure broad module compatibility.
 
 *   [Legacy Xposed API](https://api.xposed.info/)
 *   [Modern libxposed API](https://github.com/JingMatrix/libxposed-api)
 *   [Xposed Module Repository](https://github.com/Xposed-Modules-Repo)
 
 > [!NOTE]
-> Vector supports the `libxposed` API via two git submodules: the [module API](./xposed/) and the [service API](./services/).
+> Aevix supports the `libxposed` API via two git submodules: the [module API](./xposed/) and the [service API](./services/).
 >
-> A successful GitHub Actions build of the [master](https://github.com/JingMatrix/Vector/tree/master) branch indicates that Vector fully supports these APIs at those specific commits.
-> Developers are suggested to check out the same commits as Vector.
+> A successful GitHub Actions build of the [master](https://github.com/JingMatrix/Vector/tree/master) branch indicates that Aevix fully supports these APIs at those specific commits.
+> Developers are suggested to check out the same commits as Aevix.
 
 ---
 
@@ -118,4 +118,4 @@ This project is made possible by the following open-source contributions:
 
 ### License
 
-Vector is licensed under the [GNU General Public License v3](http://www.gnu.org/copyleft/gpl.html).
+Aevix is licensed under the [GNU General Public License v3](http://www.gnu.org/copyleft/gpl.html).
