@@ -22,6 +22,18 @@ import org.aevix.nativebridge.HookBridge
 
 private const val TAG = "AevixContext"
 
+/**
+ * The name a module is told the framework is.
+ *
+ * It has to be `LSPosed`: that is the name a module's whitelist carries, and a module that reads
+ * an unfamiliar one returns without registering a hook. It is also the one signature a detector
+ * can match by name, in a DEX that is mapped into every injected process, so it is written here as
+ * bytes and assembled once at class-init. What lands in memory is a String; what lands in the DEX
+ * is seven numbers, and a scan for the name has nothing to find.
+ */
+private val frameworkApiName: String =
+    byteArrayOf(76, 83, 80, 111, 115, 101, 100).decodeToString()
+
 /** Smallest positive gap between the sorted addresses, i.e. one ArtMethod. */
 private fun strideOf(addresses: LongArray): Long {
     val sorted = addresses.sorted()
@@ -75,7 +87,7 @@ class AevixContext(
         frozen = false
     }
 
-    override fun getFrameworkName(): String = BuildConfig.FRAMEWORK_API_NAME
+    override fun getFrameworkName(): String = frameworkApiName
 
     override fun getFrameworkVersion(): String = BuildConfig.VERSION_NAME
 

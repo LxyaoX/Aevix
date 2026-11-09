@@ -1,6 +1,7 @@
 package org.aevix.daemon.data
 
 import java.nio.file.Path
+import org.aevix.daemon.BuildConfig
 import org.aevix.ipc.LoadedModule
 
 data class ProcessScope(val processName: String, val uid: Int)
@@ -12,12 +13,13 @@ data class ProcessScope(val processName: String, val uid: Int)
 data class DaemonState(
     // State non configurable for users.
     //
-    // Off, deliberately. This is the framework's API protection: it renames its own entry classes
-    // on every boot, obfuscates each module's DEX before loading it, and is what
-    // PROP_RT_API_PROTECTION reports to modules. It costs load time and breaks modules that read
-    // their own DEX, and nothing here depends on it, so this build does without it. This field is
-    // the single place that decides -- everything else only reads it.
-    val isDexObfuscateEnabled: Boolean = false,
+    // This is not a flag about modules: it is the framework's hiding. Before a DEX is handed to a
+    // process, its entry classes are renamed to names drawn fresh on every boot, so a scan for a
+    // hook framework's classes finds nothing to name. Off, every injected process maps a DEX that
+    // says `org.aevix.core.Main` outright, which is what a detector reports as a hook framework
+    // being present. It also drives PROP_RT_API_PROTECTION, which is what tells modules the
+    // protection is on. Turning it off is one line here; nothing else decides.
+    val isDexObfuscateEnabled: Boolean = !BuildConfig.DEBUG,
     // States initialized after system services are ready
     val isCacheReady: Boolean = false,
     val managerUid: Int = -1,

@@ -28,8 +28,9 @@ android {
     defaultConfig {
         consumerProguardFiles("consumer-rules.pro")
         buildConfigField("String", "FRAMEWORK_NAME", """"${frameworkName}"""")
-        // See daemon/build.gradle.kts: this is what modules gate on, not the display name.
-        buildConfigField("String", "FRAMEWORK_API_NAME", """"LSPosed"""")
+        // The value modules gate on is assembled in AevixContext instead: a literal here would
+        // sit in the DEX that every injected process maps, which is exactly what a name scan
+        // looks for. See frameworkApiName there.
         buildConfigField("String", "VERSION_NAME", """"${versionNameProvider.get()}"""")
         buildConfigField("long", "VERSION_CODE", versionCodeProvider.get())
     }

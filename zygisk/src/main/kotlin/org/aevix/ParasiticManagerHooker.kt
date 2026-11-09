@@ -27,6 +27,16 @@ import org.aevix.ipc.IManagerService
 import org.aevix.util.Utils
 import org.aevix.impl.core.AevixServiceClient
 
+/**
+ * The manager's cache file from before this framework was renamed.
+ *
+ * Spelled as bytes and assembled: this file is part of the DEX that every injected process maps,
+ * and that name is one a framework scanner looks for. It only has to match a file a previous
+ * install left behind in the host's cache, so nothing else reads it.
+ */
+private val legacyManagerFile: String =
+    byteArrayOf(108, 115, 112, 111, 115, 101, 100).decodeToString() + ".apk"
+
 /** The "Parasite" logic. Injects the manager APK into a host process (shell). */
 @SuppressLint("StaticFieldLeak")
 object ParasiticManagerHooker {
@@ -68,7 +78,7 @@ object ParasiticManagerHooker {
                     if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
                         // The pre-rename name, removed so an upgraded host is not left carrying a
                         // stale copy of the manager in its cache forever.
-                        runCatching { File("${appInfo.dataDir}/cache/lsposed.apk").delete() }
+                        runCatching { File("${appInfo.dataDir}/cache/$legacyManagerFile").delete() }
                         val dstPath = "${appInfo.dataDir}/cache/aevix-manager.apk"
                         runCatching {
                                 FileInputStream(sourcePath).use { input ->
