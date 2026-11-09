@@ -6,7 +6,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <algorithm>
+#include <cerrno>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <utility>  // For std::move
@@ -50,11 +53,54 @@ ElfImage::ElfImage(std::string_view lib_name) : path_(lib_name) {
     }
     file_size_ = file_info.st_size;
 
-    file_map_ = mmap(nullptr, file_size_, PROT_READ, MAP_SHARED, fd, 0);
+    /*
+     * An anonymous copy, not a shared mapping of the file.
+     *
+     * This image exists only to resolve symbols, and mapping the file again puts a second,
+     * read-only record for it in /proc/self/maps. Some applications walk their own maps to find
+     * the module they are running inside and take the first match for a library's name; a second
+     * record with a different base is then read as the load address, and the lookup that follows
+     * dereferences it and crashes. Anonymous memory leaves nothing extra for them to find, and
+     * costs one copy of the file at load time.
+     */
+    file_map_ = mmap(nullptr, file_size_, PROT_READ | PROT_WRITE,
+                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (file_map_ == MAP_FAILED) {
+        PLOGE("Anonymous mmap failed for {}", path_.c_str());
+        file_map_ = nullptr;
+        close(fd);
+        base_ = nullptr;
+        return;
+    }
+
+    size_t copied = 0;
+    while (copied < file_size_) {
+        const size_t remaining = file_size_ - copied;
+        const size_t chunk =
+            std::min(remaining, static_cast<size_t>(std::numeric_limits<ssize_t>::max()));
+        const ssize_t read_size =
+            pread(fd, static_cast<char *>(file_map_) + copied, chunk, static_cast<off_t>(copied));
+
+        if (read_size < 0 && errno == EINTR) continue;
+        if (read_size <= 0) {
+            if (read_size < 0) {
+                PLOGE("Failed to read ELF file: {}", path_.c_str());
+            } else {
+                LOGE("Unexpected EOF while reading ELF file: {}", path_.c_str());
+            }
+            close(fd);
+            munmap(file_map_, file_size_);
+            file_map_ = nullptr;
+            base_ = nullptr;
+            return;
+        }
+        copied += static_cast<size_t>(read_size);
+    }
     close(fd);
 
-    if (file_map_ == MAP_FAILED) {
-        PLOGE("mmap failed for {}", path_.c_str());
+    if (mprotect(file_map_, file_size_, PROT_READ) != 0) {
+        PLOGE("Failed to make ELF image read-only: {}", path_.c_str());
+        munmap(file_map_, file_size_);
         file_map_ = nullptr;
         base_ = nullptr;
         return;
