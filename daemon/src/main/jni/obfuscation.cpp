@@ -16,6 +16,7 @@
 #include <random>
 #include <string>
 #include <string_view>
+#include <vector>
 #include <utils/jni_helper.hpp>
 
 namespace {
@@ -28,6 +29,28 @@ std::map<std::string, std::string> signatures = {
     {"Lio/github/libxposed/api/Xposed", ""},  {"Lorg/aevix/core/", ""},
     {"Lorg/aevix/nativebridge/", ""}, {"Lorg/aevix/service/", ""},
 };
+
+/**
+ * One signature in both spellings a DEX can carry: the type descriptor a class is stored under
+ * (`Lorg/aevix/core/`) and the dotted form a hand-written `Class.forName` argument or a
+ * stack-trace filter holds (`org.aevix.core.`).
+ *
+ * Both are rewritten to the same random name, so a lookup written by hand keeps resolving while
+ * the name a scan would recognise is gone from the string table.
+ *
+ * `org/aevix/ipc/` is deliberately absent from `signatures`: those dotted strings are AIDL
+ * interface descriptors. The proxy in this DEX writes one, the stub in the daemon -- whose own DEX
+ * is never rewritten -- compares it, and renaming one side would fail every call across the
+ * boundary. Descriptors are renamed only where the string is not also a wire token.
+ */
+struct ObfuscationRule {
+    std::string from;
+    std::string to;
+    std::string dotted_from;
+    std::string dotted_to;
+};
+
+std::vector<ObfuscationRule> rules;
 
 jclass class_file_descriptor = nullptr;
 jmethodID method_file_descriptor_ctor = nullptr;
@@ -115,6 +138,12 @@ static void ensureInitialized(JNIEnv *env) {
             LOGV("%s => %s", i.first.c_str(), i.second.c_str());
         }
 
+        // Filled after the names are drawn, so a rule's two spellings are always the same name.
+        rules.reserve(signatures.size());
+        for (const auto &i : signatures) {
+            rules.push_back({i.first, i.second, to_java(i.first), to_java(i.second)});
+        }
+
         LOGD("ObfuscationManager init successfully");
     });
 }
@@ -171,12 +200,18 @@ static int obfuscateDexBuffer(const void *dex_data, size_t size) {
     auto ir = reader.GetIr();
 
     LOGD("Mutating strings in-place");
-    // Mutate strings in-place.
+    // Mutate strings in-place, in both spellings: the descriptor and the dotted form that a
+    // `Class.forName` argument would carry. Same length either way, so the string table stays
+    // valid without the slicer having to re-lay it out.
     for (auto &i : ir->strings) {
-        const char *s = i->c_str();
-        for (const auto &signature : signatures) {
-            char *p = const_cast<char *>(strstr(s, signature.first.c_str()));
-            if (p) memcpy(p, signature.second.c_str(), signature.first.length());
+        char *s = const_cast<char *>(i->c_str());
+        for (const auto &rule : rules) {
+            if (char *p = strstr(s, rule.from.c_str())) {
+                memcpy(p, rule.to.c_str(), rule.from.length());
+            }
+            if (char *q = strstr(s, rule.dotted_from.c_str())) {
+                memcpy(q, rule.dotted_to.c_str(), rule.dotted_from.length());
+            }
         }
     }
 
@@ -225,8 +260,9 @@ Java_org_aevix_daemon_utils_ObfuscationManager_obfuscateDex(JNIEnv *env,
     }
 
     bool needs_obfuscation = false;
-    for (const auto &sig : signatures) {
-        if (memmem(mem, size, sig.first.c_str(), sig.first.length()) != nullptr) {
+    for (const auto &rule : rules) {
+        if (memmem(mem, size, rule.from.c_str(), rule.from.length()) != nullptr ||
+            memmem(mem, size, rule.dotted_from.c_str(), rule.dotted_from.length()) != nullptr) {
             needs_obfuscation = true;
             break;
         }

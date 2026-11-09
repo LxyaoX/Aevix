@@ -14,6 +14,8 @@ import android.os.ServiceManager
 import android.os.SystemProperties
 import android.system.Os
 import android.util.Log
+import java.io.File
+import java.io.RandomAccessFile
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -144,6 +146,8 @@ object AevixDaemon {
     // Initializes system frameworks inside the daemon process
     ActivityThread.systemMain()
     DdmHandleAppName.setAppName("org.aevix.daemon", 0)
+    // After setAppName, which writes argv[0] itself.
+    scrubCommandLine()
 
     // Wait for Android core services
     waitForSystemService("package")
@@ -169,6 +173,35 @@ object AevixDaemon {
 
     Looper.loop()
     throw RuntimeException("Main thread loop unexpectedly exited")
+  }
+
+  /**
+   * Blanks this process's argument vector.
+   *
+   * `app_process` leaves the class it was told to run in `/proc/<pid>/cmdline`, so anything that
+   * can enumerate processes reads `org.aevix.daemon.AevixDaemon` -- the one string on the device
+   * that says what this root process is. The arguments live in this process's own stack, so filling
+   * them from `/proc/self/mem` costs one write and leaves a command line that reads as blank.
+   *
+   * `/proc/<pid>/comm` is a separate string (it is what `--nice-name` set), so the process still
+   * appears as `Aevixd` in a process list; only the arguments go.
+   */
+  private fun scrubCommandLine() {
+    runCatching {
+          val stat = File("/proc/self/stat").readText()
+          // Field 2 is the executable name, parenthesised and allowed to contain spaces, so the
+          // fields that matter start after the last ')'. That makes field 3 the first token, and
+          // arg_start (48) index 45, arg_end (49) index 46.
+          val fields = stat.substring(stat.lastIndexOf(')') + 2).split(' ')
+          val start = fields[45].toLong()
+          val end = fields[46].toLong()
+          if (end <= start) return@runCatching
+          RandomAccessFile("/proc/self/mem", "rw").use { mem ->
+            mem.seek(start)
+            mem.write(ByteArray((end - start).toInt()) { ' '.code.toByte() })
+          }
+        }
+        .onFailure { Log.w(TAG, "Could not blank the command line", it) }
   }
 
   private fun waitForSystemService(name: String) = runBlocking {
