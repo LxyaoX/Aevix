@@ -149,7 +149,14 @@ class GitHubRepository(
                 val total = if (fresh.totalCommits > 0) fresh.totalCommits else previous?.totalCommits ?: 0L
                 runCatching {
                         snapshotFile.writeText(
-                            json.encodeToString(Snapshot(total, fresh.rawCommits, repo))
+                            json.encodeToString(
+                                Snapshot(
+                                    totalCommits = total,
+                                    commits = fresh.rawCommits,
+                                    repo = repo,
+                                    upstreamCommits = fresh.upstreamCommits,
+                                )
+                            )
                         )
                     }
                     .onFailure { e -> logW("feed: snapshot write failed", e) }
@@ -160,6 +167,7 @@ class GitHubRepository(
                     fromCache = false,
                     offline = false,
                     totalCommits = total,
+                    upstreamRaw = fresh.upstreamCommits,
                     freshness = freshness,
                 )
             }
@@ -192,6 +200,7 @@ class GitHubRepository(
                 // this path did not make, and without it a cached read loses the commit numbering
                 // that the "you are here" marker is built on.
                 totalCommits = cached.totalCommits,
+                upstreamRaw = cached.upstreamCommits,
             )
         }
 
@@ -409,6 +418,14 @@ class GitHubRepository(
         val totalCommits: Long = 0L,
         val commits: List<GhCommit> = emptyList(),
         /**
+         * Upstream's commits in the same window.
+         *
+         * Stored for the same reason as [repo]: the ranking is built from them, and a launch that
+         * deliberately makes no request would otherwise drop everyone who only commits upstream
+         * out of it. Defaulted, so a snapshot written before this field existed still parses.
+         */
+        val upstreamCommits: List<GhCommit> = emptyList(),
+        /**
          * The stars, forks and licence line.
          *
          * Stored for the same reason as the total: it comes from a second request, and a cached
@@ -423,6 +440,7 @@ class GitHubRepository(
         val rawCommits: List<GhCommit>,
         val repo: GhRepo?,
         val totalCommits: Long,
+        val upstreamCommits: List<GhCommit>,
     )
 
     private fun fetch(windowStartEpochSeconds: Long, freshness: Freshness): Fetched {
@@ -438,7 +456,17 @@ class GitHubRepository(
                 .getOrNull()
 
         val total = runCatching { fetchTotalCommits() }.getOrDefault(0L)
-        return Fetched(commits, repo, total)
+        // Best effort: the ranking loses the upstream half of itself rather than the feed losing
+        // everything, so a failure here is an empty list and not an exception.
+        val upstream =
+            runCatching {
+                    get("$API/$UPSTREAM_REPO/commits?since=$since&per_page=100", freshness)?.let {
+                        json.decodeFromString<List<GhCommit>>(it)
+                    }
+                }
+                .getOrNull()
+                .orEmpty()
+        return Fetched(commits, repo, total, upstream)
     }
 
     /**
@@ -501,6 +529,61 @@ class GitHubRepository(
         }
     }
 
+    /**
+     * GitHub's commit, as the feed renders it.
+     *
+     * Upstream's commits go through this too. They are never listed -- a commit's position in the
+     * list is its distance from this repository's root, which theirs have no place in -- but the
+     * people who wrote them are counted, and they deserve the same author and co-author
+     * resolution as everyone else.
+     */
+    private fun toTimeline(raw: List<GhCommit>, freshness: Freshness): List<TimelineCommit> =
+        raw.map { c ->
+            val subject = c.commit.message.lineSequence().first().trim()
+            val primary =
+                c.author?.let {
+                    CommitPerson(
+                        login = it.login,
+                        avatarUrl = it.avatarUrl,
+                        profileUrl = it.htmlUrl,
+                        isBot = it.type == "Bot" || it.login.endsWith("[bot]"),
+                    )
+                }
+                // GitHub links a commit to an account by email, and does not always
+                // manage it — a commit written under an address the account never
+                // verified arrives with no author at all. The trailer path already knows
+                // how to make something of a name and an address, so it is reused here
+                // rather than dropping the person to a bare string.
+                ?: person(c.commit.author.name, c.commit.author.email, freshness)
+
+            // Everyone credited, author first, deduplicated case-insensitively — the
+            // maintainer often appears in a trailer on their own commits.
+            val authors =
+                (listOf(primary) + coAuthors(c.commit.message, freshness)).distinctBy {
+                    it.login.lowercase()
+                }
+
+            TimelineCommit(
+                sha = c.sha,
+                shortSha = c.sha.take(7),
+                subject = subject.removeSuffix(" (#${prNumber(subject) ?: ""})").trim(),
+                kind = CommitKind.of(subject),
+                pullRequest = prNumber(subject),
+                authors = authors,
+                epochSeconds = parseIso8601(c.commit.author.date),
+                htmlUrl = c.htmlUrl,
+                globalIndex = 0, // assigned after sorting, below
+
+                // Collaboration counts: a commit the maintainer landed with an outside
+                // co-author is a community contribution and is highlighted as one.
+                isCommunity =
+                    authors.any {
+                        !it.isBot && it.login.lowercase() !in PROJECT_LOGINS
+                    },
+                isBot = primary.isBot,
+            )
+        }
+
     private fun build(
         raw: List<GhCommit>,
         repo: GhRepo?,
@@ -508,6 +591,7 @@ class GitHubRepository(
         fromCache: Boolean,
         offline: Boolean,
         totalCommits: Long,
+        upstreamRaw: List<GhCommit> = emptyList(),
         freshness: Freshness = Freshness.Cached,
     ): CommunityFeed {
         if (totalCommits > 0) knownTotalCommits = totalCommits
@@ -516,51 +600,7 @@ class GitHubRepository(
         val archiveOldest =
             archived.minOfOrNull { parseIso8601(it.commit.author.date) } ?: Long.MAX_VALUE
         val commits =
-            raw.map { c ->
-                    val subject = c.commit.message.lineSequence().first().trim()
-                    val primary =
-                        c.author?.let {
-                            CommitPerson(
-                                login = it.login,
-                                avatarUrl = it.avatarUrl,
-                                profileUrl = it.htmlUrl,
-                                isBot = it.type == "Bot" || it.login.endsWith("[bot]"),
-                            )
-                        }
-                        // GitHub links a commit to an account by email, and does not always
-                        // manage it — a commit written under an address the account never
-                        // verified arrives with no author at all. The trailer path already knows
-                        // how to make something of a name and an address, so it is reused here
-                        // rather than dropping the person to a bare string.
-                        ?: person(c.commit.author.name, c.commit.author.email, freshness)
-
-                    // Everyone credited, author first, deduplicated case-insensitively — the
-                    // maintainer often appears in a trailer on their own commits.
-                    val authors =
-                        (listOf(primary) + coAuthors(c.commit.message, freshness)).distinctBy {
-                            it.login.lowercase()
-                        }
-
-                    TimelineCommit(
-                        sha = c.sha,
-                        shortSha = c.sha.take(7),
-                        subject = subject.removeSuffix(" (#${prNumber(subject) ?: ""})").trim(),
-                        kind = CommitKind.of(subject),
-                        pullRequest = prNumber(subject),
-                        authors = authors,
-                        epochSeconds = parseIso8601(c.commit.author.date),
-                        htmlUrl = c.htmlUrl,
-                        globalIndex = 0, // assigned after sorting, below
-
-                        // Collaboration counts: a commit the maintainer landed with an outside
-                        // co-author is a community contribution and is highlighted as one.
-                        isCommunity =
-                            authors.any {
-                                !it.isBot && !it.login.equals(OWNER, ignoreCase = true)
-                            },
-                        isBot = primary.isBot,
-                    )
-                }
+            toTimeline(raw, freshness)
                 .sortedByDescending { it.epochSeconds }
                 // Newest-first, so the head of the list is the newest commit and its distance
                 // from the repository root is the total count.
@@ -577,8 +617,15 @@ class GitHubRepository(
 
         // Credit follows people, not commits: a co-author is a contributor. Bots are excluded —
         // automation is not a contributor.
+        //
+        // Upstream's commits are counted here and nowhere else. Deduplicated by SHA because this
+        // repository's history *is* theirs up to the fork point: the same commit arrives in both
+        // requests, and nobody should be credited twice for one piece of work.
+        val credited =
+            if (upstreamRaw.isEmpty()) commits
+            else (commits + toTimeline(upstreamRaw, freshness)).distinctBy { it.sha }
         val contributors =
-            commits
+            credited
                 .flatMap { commit -> commit.authors.map { person -> person to commit.epochSeconds } }
                 .filterNot { (person, _) -> person.isBot }
                 .groupBy { (person, _) -> person.login.lowercase() }
@@ -924,12 +971,31 @@ class GitHubRepository(
             .getOrDefault(0L)
 
     companion object {
-        const val OWNER = "JingMatrix"
-        const val REPO = "$OWNER/Vector"
+        const val OWNER = "LxyaoX"
+        const val REPO = "$OWNER/Aevix"
         const val REPO_URL = "https://github.com/$REPO"
         const val ISSUES_URL = "$REPO_URL/issues"
         const val PULLS_URL = "$REPO_URL/pulls"
         const val DISCUSSIONS_URL = "$REPO_URL/discussions"
+
+        /**
+         * The repository this one is built on, whose commits are counted but not listed.
+         *
+         * Its history is this repository's history: every commit upstream had at the fork point is
+         * an ancestor here and arrives through both requests, which is why the merge below keys by
+         * SHA. What it adds is the commits made upstream *after* that point -- real work by the
+         * people this project is made of, in a feed that would otherwise stop noticing them.
+         */
+        const val UPSTREAM_REPO = "JingMatrix/Vector"
+
+        /**
+         * Everyone whose commits are this project's own work rather than a contribution to it.
+         *
+         * A fork continues its upstream, so the maintainer there is not an outside co-author; with
+         * only this repository's owner in the set, every inherited commit would be highlighted as
+         * community work, which is the opposite of what the highlight is for.
+         */
+        private val PROJECT_LOGINS = setOf(OWNER.lowercase(), "jingmatrix")
 
         /**
          * The Actions page, filtered the way the project README's build badge filters it.
