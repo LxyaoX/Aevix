@@ -507,25 +507,51 @@ jboolean IPCBridge::ExecTransact_Replace(jboolean *res, JNIEnv *env, jobject obj
     return false;  // Not our transaction, let the original method run.
 }
 
+namespace {
+
+/**
+ * The transaction code of a `Binder.execTransact(int, long, long, int)` argument list.
+ *
+ * Read from a copy, so the list the original method will be given is untouched.
+ */
+jint PeekTransactCode(va_list args) {
+    va_list copy;
+    va_copy(copy, args);
+    auto code = va_arg(copy, jint);
+    va_end(copy);
+    return code;
+}
+
+}  // namespace
+
 jboolean JNICALL IPCBridge::CallBooleanMethodV_Hook(JNIEnv *env, jobject obj, jmethodID methodId,
                                                     va_list args) {
-    // Check if the method being called is the one we want to intercept: Binder.execTransact()
-    if (methodId == GetInstance().exec_transact_backup_method_id_) {
-        uint64_t current_caller_id = BinderCaller::GetId();
+    auto &self = GetInstance();
 
-        jboolean res = false;
-        // Attempt to handle the transaction with our replacement logic.
-        if (current_caller_id != 0 &&
-            // If this caller is the one that just failed,
-            // skip interception and go straight to the original function.
-            current_caller_id != g_last_failed_id.load(std::memory_order_relaxed) &&
-            ExecTransact_Replace(&res, env, obj, args)) {
-            return res;  // If we handled it, return the result directly.
+    // Check if the method being called is the one we want to intercept: Binder.execTransact()
+    if (methodId == self.exec_transact_backup_method_id_) {
+        // The transaction code is read first, and the caller identity only once that code is known
+        // to be ours. This hook sits on every incoming binder transaction in the process — for
+        // system_server, the busiest path on the device — and all but a handful of them are not
+        // ours. Resolving who the caller is before knowing that costs three symbol lookups and two
+        // virtual calls apiece, for an answer the comparison below then throws away.
+        if (PeekTransactCode(args) == kBridgeTransactionCode) {
+            uint64_t current_caller_id = BinderCaller::GetId();
+
+            jboolean res = false;
+            // Attempt to handle the transaction with our replacement logic.
+            if (current_caller_id != 0 &&
+                // If this caller is the one that just failed,
+                // skip interception and go straight to the original function.
+                current_caller_id != g_last_failed_id.load(std::memory_order_relaxed) &&
+                ExecTransact_Replace(&res, env, obj, args)) {
+                return res;  // If we handled it, return the result directly.
+            }
         }
         // If not handled, fall through to call the original method.
     }
     // Call the original, real CallBooleanMethodV function.
-    return GetInstance().call_boolean_method_v_backup_(env, obj, methodId, args);
+    return self.call_boolean_method_v_backup_(env, obj, methodId, args);
 }
 
 void IPCBridge::HookBridge(JNIEnv *env) {
