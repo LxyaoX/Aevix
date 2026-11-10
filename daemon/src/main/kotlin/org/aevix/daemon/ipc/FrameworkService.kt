@@ -221,6 +221,22 @@ object FrameworkService : IFrameworkService.Stub() {
     Log.d(TAG, "Process channel attached for ${info.processName} (pid=${info.key.pid})")
   }
 
+  /**
+   * The obfuscation map, as `count then key/value pairs` at the current position of [reply].
+   *
+   * Values are the names the framework drew this boot; with the feature off, each name maps to
+   * itself so a caller can rewrite unconditionally.
+   */
+  private fun writeObfuscationMap(reply: Parcel) {
+    val obfuscation = ConfigCache.state.isDexObfuscateEnabled
+    val signatures = ObfuscationManager.getSignatures()
+    reply.writeInt(signatures.size * 2)
+    for ((key, value) in signatures) {
+      reply.writeString(key)
+      reply.writeString(if (obfuscation) value else key)
+    }
+  }
+
   override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
     when (code) {
       DEX_TRANSACTION_CODE -> {
@@ -228,17 +244,16 @@ object FrameworkService : IFrameworkService.Stub() {
         reply?.writeNoException()
         reply?.let { shm.writeToParcel(it, 0) }
         reply?.writeLong(shm.size.toLong())
+        // Appended, not served on request. The process needs both at the same point of its fork and
+        // asks for them back to back, so the map was a second round trip for an answer this one
+        // already had. A client that predates the append stops reading after the size, which is why
+        // this can be added without taking the separate transaction away.
+        reply?.let { writeObfuscationMap(it) }
         return true
       }
       OBFUSCATION_MAP_TRANSACTION_CODE -> {
-        val obfuscation = ConfigCache.state.isDexObfuscateEnabled
-        val signatures = ObfuscationManager.getSignatures()
         reply?.writeNoException()
-        reply?.writeInt(signatures.size * 2)
-        for ((key, value) in signatures) {
-          reply?.writeString(key)
-          reply?.writeString(if (obfuscation) value else key)
-        }
+        reply?.let { writeObfuscationMap(it) }
         return true
       }
     }

@@ -337,14 +337,16 @@ void AevixModule::postAppSpecialize(const zygisk::AppSpecializeArgs *args) {
     }
 
     // Fetch resources from the manager service.
-    auto [dex_fd, dex_size] = ipc_bridge.FetchFrameworkDex(env_, binder.get());
+    auto [dex_fd, dex_size, obfs_map] = ipc_bridge.FetchFrameworkDex(env_, binder.get());
     if (dex_fd < 0) {
         LOGE("Failed to fetch framework DEX for '{}'.", nice_name_str.get());
         SetAllowUnload(true);
         return;
     }
 
-    auto obfs_map = ipc_bridge.FetchObfuscationMap(env_, binder.get());
+    // The map comes with the DEX; an empty one means the reply carried none, which is what a daemon
+    // from before the two were bundled still answers, so ask for it the long way round instead.
+    if (obfs_map.empty()) obfs_map = ipc_bridge.FetchObfuscationMap(env_, binder.get());
     ConfigBridge::GetInstance()->obfuscation_map(std::move(obfs_map));
 
     {
@@ -437,14 +439,15 @@ void AevixModule::postServerSpecialize(const zygisk::ServerSpecializeArgs *args)
     // otherwise proxy through the system binder.
     jobject effective_binder = manager_binder ? manager_binder.get() : system_binder.get();
 
-    auto [dex_fd, dex_size] = ipc_bridge.FetchFrameworkDex(env_, effective_binder);
+    auto [dex_fd, dex_size, obfs_map] = ipc_bridge.FetchFrameworkDex(env_, effective_binder);
     if (dex_fd < 0) {
         LOGE("Failed to fetch framework DEX for system_server.");
         SetAllowUnload(true);
         return;
     }
 
-    auto obfs_map = ipc_bridge.FetchObfuscationMap(env_, effective_binder);
+    // See postAppSpecialize: the map travels with the DEX when the daemon has it to give.
+    if (obfs_map.empty()) obfs_map = ipc_bridge.FetchObfuscationMap(env_, effective_binder);
     ConfigBridge::GetInstance()->obfuscation_map(std::move(obfs_map));
 
     {

@@ -34,6 +34,12 @@ object Main {
         appDir: String?,
         binder: IBinder,
     ) {
+        // Silent before anything else can speak. A release build says nothing unless asked to, and
+        // every debug and verbose line this process writes lands in the host app's own log buffer,
+        // where an integrity check reads it. Set here rather than after startup because startup is
+        // already chatty, and because the daemon's own answer arrives too late to cover it.
+        Log.muted = !BuildConfig.DEBUG
+
         // Initialize system-specific resolution hooks if in system_server
         if (isSystem) {
             ParasiticManagerSystemHooker.start()
@@ -45,9 +51,10 @@ object Main {
         val appService = IFrameworkService.Stub.asInterface(binder)
         Startup.initXposed(isSystem, niceName, appDir, appService)
 
-        // Configure logging levels from the service client
-        runCatching { Log.muted = AevixServiceClient.isLogMuted }
-            .onFailure { t -> Utils.logE("Failed to configure logs from service", t) }
+        // Only the daemon may lift the silence set at the top of this method, and only by actually
+        // answering: a connection that is not up yet is not an answer, and the old default -- log
+        // everything unless told otherwise -- turned every failed connection into one.
+        AevixServiceClient.isLogMutedOrNull()?.let { muted -> Log.muted = muted }
 
         // Check if this process is the designated Aevix Manager.
         if (niceName == BuildConfig.ManagerPackageName) {
@@ -60,7 +67,7 @@ object Main {
         }
 
         // Standard Xposed module loading for third-party apps
-        Utils.logV("Loading Aevix/Xposed for $niceName (UID: ${Process.myUid()})")
+        Utils.logV("Starting for $niceName (UID: ${Process.myUid()})")
         Startup.bootstrapXposed(isSystem && isLateInject)
     }
 }

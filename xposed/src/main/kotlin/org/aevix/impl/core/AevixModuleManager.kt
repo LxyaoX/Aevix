@@ -84,7 +84,7 @@ object AevixModuleManager {
         // classes run. Recording them again here would put every library name in the list the dlopen
         // hook walks twice over, and that list never shrinks.
 
-        Log.d(TAG, "Loaded module ${module.packageName} successfully.")
+        Log.d(TAG, "Loaded package ${module.packageName} successfully.")
         return true
     }
 
@@ -95,7 +95,7 @@ object AevixModuleManager {
         processName: String,
     ): Pair<Generation, List<XposedModule>>? {
         try {
-            Log.d(TAG, "Loading module ${module.packageName}")
+            Log.d(TAG, "Loading package ${module.packageName}")
 
             // Construct the native library search path
             val librarySearchPath = buildString {
@@ -160,7 +160,7 @@ object AevixModuleManager {
             for (className in module.code.moduleClassNames) {
                 runCatching {
                         val moduleClass = moduleClassLoader.loadClass(className)
-                        Log.v(TAG, "Loading class $moduleClass")
+                        Log.v(TAG, "Resolving entry $moduleClass")
 
                         if (!XposedModule::class.java.isAssignableFrom(moduleClass)) {
                             Log.e(TAG, "Class does not extend XposedModule, skipping.")

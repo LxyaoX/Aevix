@@ -72,13 +72,20 @@ public:
         JNIEnv *env, jobject system_server_binder);
 
     /**
-     * @brief Fetches the framework DEX file via the provided Binder connection.
+     * @brief Fetches the framework DEX file, and the obfuscation map when it comes with it.
+     *
+     * The two used to be separate transactions. They answer the same question and are needed at the
+     * same point in the fork path, so the daemon writes the map after the DEX when it has one to
+     * give, and the caller learns it from the reply length rather than from a second round trip.
+     *
      * @param env JNI environment pointer.
      * @param binder A live Binder connection to the host service.
-     * @return A tuple containing the file descriptor and size of the DEX file.
-     *         Returns {-1, 0} on failure.
+     * @return The file descriptor, the size, and the map. The map is empty when the reply carried
+     *         none -- an older daemon, or a failed read -- and the caller then asks for it as it
+     *         always did. The descriptor is -1 on failure.
      */
-    std::tuple<int, size_t> FetchFrameworkDex(JNIEnv *env, jobject binder);
+    std::tuple<int, size_t, std::map<std::string, std::string>> FetchFrameworkDex(JNIEnv *env,
+                                                                                 jobject binder);
 
     /**
      * @brief Fetches the framework's obfuscation map via the provided Binder.
@@ -157,6 +164,7 @@ private:
     jmethodID read_int_method_ = nullptr;
     jmethodID read_long_method_ = nullptr;
     jmethodID read_string_method_ = nullptr;
+    jmethodID data_avail_method_ = nullptr;
 
     // android.os.ParcelFileDescriptor
     jclass parcel_fd_class_ = nullptr;
@@ -170,6 +178,9 @@ private:
                                                     va_list args);
     // The helper function that handles our specific transaction code.
     static jboolean ExecTransact_Replace(jboolean *res, JNIEnv *env, jobject obj, va_list args);
+
+    // Reads a `size then key/value pairs` obfuscation map off the current position of a reply.
+    std::map<std::string, std::string> ReadObfuscationMap(JNIEnv *env, jobject reply);
 
     // A complete copy of the original JNI function table, with our hook installed.
     JNINativeInterface native_interface_hook_{};

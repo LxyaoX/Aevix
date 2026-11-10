@@ -215,6 +215,7 @@ void IPCBridge::Initialize(JNIEnv *env) {
         env, parcel_class_, "readFileDescriptor", "()Landroid/os/ParcelFileDescriptor;");
     read_int_method_ = lsplant::JNI_GetMethodID(env, parcel_class_, "readInt", "()I");
     read_long_method_ = lsplant::JNI_GetMethodID(env, parcel_class_, "readLong", "()J");
+    data_avail_method_ = lsplant::JNI_GetMethodID(env, parcel_class_, "dataAvail", "()I");
     read_string_method_ =
         lsplant::JNI_GetMethodID(env, parcel_class_, "readString", "()Ljava/lang/String;");
 
@@ -384,9 +385,10 @@ lsplant::ScopedLocalRef<jobject> IPCBridge::RequestManagerBinderFromSystemServer
     return result_binder;
 }
 
-std::tuple<int, size_t> IPCBridge::FetchFrameworkDex(JNIEnv *env, jobject binder) {
+std::tuple<int, size_t, std::map<std::string, std::string>> IPCBridge::FetchFrameworkDex(
+    JNIEnv *env, jobject binder) {
     if (!initialized_ || !binder) {
-        return {-1, 0};
+        return {-1, 0, {}};
     }
 
     ParcelWrapper parcels(env, this);
@@ -396,29 +398,38 @@ std::tuple<int, size_t> IPCBridge::FetchFrameworkDex(JNIEnv *env, jobject binder
 
     if (!success) {
         LOGE("DEX fetch transaction failed.");
-        return {-1, 0};
+        return {-1, 0, {}};
     }
 
     lsplant::JNI_CallVoidMethod(env, parcels.reply.get(), read_exception_method_);
     if (env->ExceptionCheck()) {
         LOGE("Remote exception received while fetching DEX.");
         env->ExceptionClear();
-        return {-1, 0};
+        return {-1, 0, {}};
     }
 
     auto pfd =
         lsplant::JNI_CallObjectMethod(env, parcels.reply.get(), read_file_descriptor_method_);
     if (!pfd) {
         LOGE("Received null ParcelFileDescriptor for DEX.");
-        return {-1, 0};
+        return {-1, 0, {}};
     }
 
     int fd = lsplant::JNI_CallIntMethod(env, pfd.get(), detach_fd_method_);
     size_t size = static_cast<size_t>(
         lsplant::JNI_CallLongMethod(env, parcels.reply.get(), read_long_method_));
 
-    LOGV("Fetched framework DEX: fd={}, size={}", fd, size);
-    return {fd, size};
+    // Whatever is left in the reply is the obfuscation map. A daemon that predates this writes
+    // nothing after the size, and reading a map that is not there would take the position, the
+    // exception state and the transaction with it -- so the length decides, not a version number
+    // that the two sides would have to keep in step.
+    std::map<std::string, std::string> obfuscation_map;
+    if (lsplant::JNI_CallIntMethod(env, parcels.reply.get(), data_avail_method_) > 0) {
+        obfuscation_map = ReadObfuscationMap(env, parcels.reply.get());
+    }
+
+    LOGV("Fetched framework DEX: fd={}, size={}, {} signature(s)", fd, size, obfuscation_map.size());
+    return {fd, size, std::move(obfuscation_map)};
 }
 
 std::map<std::string, std::string> IPCBridge::FetchObfuscationMap(JNIEnv *env, jobject binder) {
@@ -444,7 +455,18 @@ std::map<std::string, std::string> IPCBridge::FetchObfuscationMap(JNIEnv *env, j
         return result_map;
     }
 
-    int size = lsplant::JNI_CallIntMethod(env, parcels.reply.get(), read_int_method_);
+    auto result = ReadObfuscationMap(env, parcels.reply.get());
+    LOGV("Fetched obfuscation map with {} entries.", result.size());
+    return result;
+}
+
+std::map<std::string, std::string> IPCBridge::ReadObfuscationMap(JNIEnv *env, jobject reply) {
+    std::map<std::string, std::string> result_map;
+    if (!initialized_ || !reply) {
+        return result_map;
+    }
+
+    int size = lsplant::JNI_CallIntMethod(env, reply, read_int_method_);
     if (size < 0 || (size % 2 != 0)) {
         LOGE("Invalid size for obfuscation map received: %d", size);
         return result_map;
@@ -452,10 +474,10 @@ std::map<std::string, std::string> IPCBridge::FetchObfuscationMap(JNIEnv *env, j
 
     for (int i = 0; i < size / 2; ++i) {
         auto key_jstr = lsplant::JNI_Cast<jstring>(
-            lsplant::JNI_CallObjectMethod(env, parcels.reply.get(), read_string_method_));
+            lsplant::JNI_CallObjectMethod(env, reply, read_string_method_));
 
         auto val_jstr = lsplant::JNI_Cast<jstring>(
-            lsplant::JNI_CallObjectMethod(env, parcels.reply.get(), read_string_method_));
+            lsplant::JNI_CallObjectMethod(env, reply, read_string_method_));
 
         if (env->ExceptionCheck() || !key_jstr || !val_jstr) {
             LOGE("Error reading string from parcel for obfuscation map.");
@@ -469,7 +491,6 @@ std::map<std::string, std::string> IPCBridge::FetchObfuscationMap(JNIEnv *env, j
         result_map[key_str.get()] = val_str.get();
     }
 
-    LOGV("Fetched obfuscation map with {} entries.", result_map.size());
     return result_map;
 }
 

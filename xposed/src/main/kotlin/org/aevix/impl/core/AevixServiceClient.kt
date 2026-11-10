@@ -55,7 +55,19 @@ object AevixServiceClient : IFrameworkService, IBinder.DeathRecipient {
     }
 
     override fun isLogMuted(): Boolean {
-        return runCatching { service?.isLogMuted == true }.getOrDefault(false)
+        return isLogMutedOrNull() ?: false
+    }
+
+    /**
+     * The daemon's answer, or null when there is no daemon to ask.
+     *
+     * An injected process starts silent and only a real answer may unmute it; a connection that is
+     * not up yet is not an answer. Collapsing the two into `false`, as the interface method has to,
+     * reads as "log everything" and is what put the framework's own lines into every host app's
+     * log buffer on a release build.
+     */
+    fun isLogMutedOrNull(): Boolean? {
+        return runCatching { service?.isLogMuted }.getOrNull()
     }
 
     override fun getLegacyModules(): List<LoadedModule> {
