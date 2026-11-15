@@ -31,7 +31,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Helpers that simplify hooking and calling methods/constructors, getting and settings fields, ...
@@ -44,7 +43,13 @@ public final class XposedHelpers {
     private static final ConcurrentHashMap<MemberCacheKey.Method, Optional<Method>> methodCache = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<MemberCacheKey.Constructor, Optional<Constructor<?>>> constructorCache = new ConcurrentHashMap<>();
     private static final WeakHashMap<Object, HashMap<String, Object>> additionalFields = new WeakHashMap<>();
-    private static final HashMap<String, ThreadLocal<AtomicInteger>> sMethodDepth = new HashMap<>();
+    private static final Object NULL_METHOD_DEPTH_KEY = new Object();
+    private static final ConcurrentHashMap<Object, ThreadLocal<MethodDepthCounter>> sMethodDepth =
+            new ConcurrentHashMap<>();
+
+    private static final class MethodDepthCounter {
+        int value;
+    }
 
     /**
      * Note that we use object key instead of string here, because string calculation will lose all
@@ -1785,7 +1790,8 @@ public final class XposedHelpers {
      * @return The updated depth.
      */
     public static int incrementMethodDepth(String method) {
-        return getMethodDepthCounter(method).get().incrementAndGet();
+        MethodDepthCounter counter = getMethodDepthCounter(method).get();
+        return ++counter.value;
     }
 
     /**
@@ -1796,7 +1802,8 @@ public final class XposedHelpers {
      * @return The updated depth.
      */
     public static int decrementMethodDepth(String method) {
-        return getMethodDepthCounter(method).get().decrementAndGet();
+        MethodDepthCounter counter = getMethodDepthCounter(method).get();
+        return --counter.value;
     }
 
     /**
@@ -1807,23 +1814,13 @@ public final class XposedHelpers {
      * @return The updated depth.
      */
     public static int getMethodDepth(String method) {
-        return getMethodDepthCounter(method).get().get();
+        return getMethodDepthCounter(method).get().value;
     }
 
-    private static ThreadLocal<AtomicInteger> getMethodDepthCounter(String method) {
-        synchronized (sMethodDepth) {
-            ThreadLocal<AtomicInteger> counter = sMethodDepth.get(method);
-            if (counter == null) {
-                counter = new ThreadLocal<AtomicInteger>() {
-                    @Override
-                    protected AtomicInteger initialValue() {
-                        return new AtomicInteger();
-                    }
-                };
-                sMethodDepth.put(method, counter);
-            }
-            return counter;
-        }
+    private static ThreadLocal<MethodDepthCounter> getMethodDepthCounter(String method) {
+        Object key = method == null ? NULL_METHOD_DEPTH_KEY : method;
+        return sMethodDepth.computeIfAbsent(key, ignored ->
+                ThreadLocal.withInitial(MethodDepthCounter::new));
     }
 
     //#################################################################################################
