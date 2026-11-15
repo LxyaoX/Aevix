@@ -493,7 +493,9 @@ class ModuleAppService(private val loadedModule: LoadedModule) : IXposedService.
   override fun getFrameworkProperties(): Long {
     ensureModule()
     var prop = IXposedService.PROP_CAP_SYSTEM or IXposedService.PROP_CAP_REMOTE
-    if (ConfigCache.state.isDexObfuscateEnabled)
+    // Keyed on the API protection switch, not on DEX obfuscation: the flag tells a module it must
+    // not reflect into the API, and with the API packages left spelled out, reflection works.
+    if (ConfigCache.state.isApiProtectionEnabled)
         prop = prop or IXposedService.PROP_RT_API_PROTECTION
     return prop
   }
