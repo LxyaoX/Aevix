@@ -7,8 +7,6 @@ import android.os.Environment;
 import android.preference.PreferenceManager;
 
 import org.aevix.util.Log;
-import org.aevix.impl.core.AevixServiceClient;
-import org.aevix.impl.utils.AevixMetaDataReader;
 import org.aevix.legacy.BuildConfig;
 import org.xmlpull.v1.XmlPullParserException;
 
@@ -29,7 +27,6 @@ import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 
 import de.robv.android.xposed.services.FileResult;
@@ -153,34 +150,13 @@ public final class XSharedPreferences implements SharedPreferences {
      * @param prefFileName The file name without ".xml".
      */
     public XSharedPreferences(String packageName, String prefFileName) {
-        boolean newModule = false;
-        var m = XposedInit.getLoadedModules().getOrDefault(packageName, Optional.empty());
-        if (m.isPresent()) {
-            boolean isModule = false;
-            int xposedminversion = -1;
-            boolean xposedsharedprefs = false;
-            try {
-                Map<String, Object> metaData = AevixMetaDataReader.getMetaData(new File(m.get()));
-                isModule = metaData.containsKey("xposedminversion");
-                if (isModule) {
-                    Object minVersionRaw = metaData.get("xposedminversion");
-                    if (minVersionRaw instanceof Integer) {
-                        xposedminversion = (Integer) minVersionRaw;
-                    } else if (minVersionRaw instanceof String) {
-                        xposedminversion = AevixMetaDataReader.extractIntPart((String) minVersionRaw);
-                    }
-                    xposedsharedprefs = metaData.containsKey("xposedsharedprefs");
-                }
-            } catch (NumberFormatException | IOException e) {
-                Log.w(TAG, "Apk parser fails: " + e);
-            }
-            newModule = isModule && (xposedminversion > 92 || xposedsharedprefs);
-        }
-        if (newModule) {
-            mFile = new File(AevixServiceClient.INSTANCE.getPrefsPath(packageName), prefFileName + ".xml");
-        } else {
-            mFile = new File(Environment.getDataDirectory(), "data/" + packageName + "/shared_prefs/" + prefFileName + ".xml");
-        }
+        // The module's own file, as it has always been. There is no redirection into the daemon's
+        // safe zone any more: a module writes the file with the ordinary API and this reads it back
+        // from where the module wrote it.
+        mFile =
+                new File(
+                        Environment.getDataDirectory(),
+                        "data/" + packageName + "/shared_prefs/" + prefFileName + ".xml");
         mFilename = mFile.getAbsolutePath();
         init();
     }
@@ -194,7 +170,7 @@ public final class XSharedPreferences implements SharedPreferences {
             Path path = mFile.toPath();
             try {
                 if (sWatcher == null) {
-                    sWatcher = new File(AevixServiceClient.INSTANCE.getPrefsPath("")).toPath().getFileSystem().newWatchService();
+                    sWatcher = path.getFileSystem().newWatchService();
                     if (BuildConfig.DEBUG) Log.d(TAG, "Created WatchService instance");
                 }
                 mWatchKey = path.getParent().register(sWatcher, StandardWatchEventKinds.ENTRY_CREATE,
