@@ -148,15 +148,20 @@ object Dex2OatServer {
 
   private fun openDex2oat(id: Int, path: String) {
     runCatching {
-      fdArray[id] = Os.open(path, OsConstants.O_RDONLY, 0)
-      dex2oatArray[id] = path
-    }
+          fdArray[id] = Os.open(path, OsConstants.O_RDONLY, 0)
+          dex2oatArray[id] = path
+        }
+        .onFailure { Log.w(TAG, "Failed to open $path for slot $id", it) }
   }
 
   private fun checkAndAddDex2Oat(path: String) {
     val file = File(path)
     if (!file.exists()) return
 
+    // The slot this candidate took, or -1 if it failed before taking one. Tracked rather than
+    // recovered with `indexOf`: the array answers "which width is available", it is not a place to
+    // look a path up in, and a second reader of the cleanup should not have to prove that.
+    var assignedIndex = -1
     runCatching {
           FileInputStream(file).use { fis ->
             val header = ByteArray(5)
@@ -182,18 +187,22 @@ object Dex2OatServer {
             if (index != -1 && dex2oatArray[index] == null) {
               dex2oatArray[index] = path
               fdArray[index] = Os.open(path, OsConstants.O_RDONLY, 0)
+              assignedIndex = index
               Log.i(TAG, "Detected $path -> Assigned Index $index")
             }
           }
         }
         .onFailure { error ->
-          // The candidate may fail before it has been assigned a slot.
-          // In that case indexOf(path) is -1 and must not be used as an array index.
-          val index = dex2oatArray.indexOf(path)
-          if (index >= 0) {
-            dex2oatArray[index] = null
-            fdArray[index]?.let { fd -> runCatching { Os.close(fd) } }
-            fdArray[index] = null
+          if (assignedIndex >= 0) {
+            dex2oatArray[assignedIndex] = null
+            // Closing before the slot is cleared keeps the two in step: `doMount` reads
+            // `dex2oatArray` to decide which width exists, so a null slot with a live descriptor
+            // would be one nothing can reach again.
+            fdArray[assignedIndex]?.let { fd ->
+              runCatching { Os.close(fd) }
+                  .onFailure { Log.w(TAG, "Failed to close the descriptor for $path", it) }
+            }
+            fdArray[assignedIndex] = null
           }
           Log.w(TAG, "Failed to inspect dex2oat binary at $path", error)
         }
