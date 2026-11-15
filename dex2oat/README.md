@@ -29,8 +29,8 @@ The wrapper acts as a "man-in-the-middle" for the compiler. When called by the s
 6.  invokes the dynamic linker (`linker64`) to execute the compiler.
 
 ### The Hooker [oat_hook.cpp](src/main/cpp/oat_hook.cpp)
-The hooker library is preloaded into the compiler's address space. It uses the [LSPlt](https://github.com/JingMatrix/LSPlt) library to:
-1.  Scan the memory map to find the `dex2oat` binary.
+The hooker library is preloaded into the compiler's address space. It uses the [YukiPLT](https://github.com/Rouyashiki/YukiPLT) library to:
+1.  Select the target image by its `AT_PHDR`. That is the main executable's identity, unlike a path string or a device/inode pair taken from `/proc/self/maps`, which a vendor binary or a module bound over the original can make ambiguous.
 2.  Locate and hook internal ART functions:
     *   [art::OatHeader::GetKeyValueStore](https://cs.android.com/android/platform/superproject/+/android-latest-release:art/runtime/oat/oat.cc;l=366)
     *   [art::OatHeader::ComputeChecksum](https://cs.android.com/android/platform/superproject/+/android-latest-release:art/runtime/oat/oat.cc;l=366)

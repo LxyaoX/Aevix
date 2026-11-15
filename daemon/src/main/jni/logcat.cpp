@@ -42,8 +42,9 @@ constexpr auto kModuleTags = std::array{"AevixContext"sv, "AevixLegacyBridge"sv,
                                         "AevixModuleManager"sv, "XSharedPreferences"sv};
 
 // These route to the 'verbose' stream only.
+// YukiPLT is absent on purpose: it writes nothing to logd, so a tag for it would never match.
 constexpr auto kExactTags = std::array{"APatchD"sv, "Dobby"sv,  "KernelSU"sv, "LSPlant"sv,
-                                       "LSPlt"sv,   "Magisk"sv, "SELinux"sv,  "TEESimulator"sv};
+                                       "Magisk"sv,  "SELinux"sv, "TEESimulator"sv};
 
 // Partial matches for dynamic components like Zygisk modules or Aevix/LSPosed components.
 constexpr auto kPrefixTags = std::array{"LSPosed"sv, "Aevix"sv, "dex2oat"sv, "zygisk"sv};
