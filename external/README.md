@@ -14,11 +14,11 @@ They are included as git submodules to ensure version consistency and timely upd
 -   [LSPlant](https://github.com/JingMatrix/LSPlant):
     A hooking framework for the Android Runtime (ART). It provides the core functionality for intercepting and modifying Java methods.
 
+-   [YukiPLT](https://github.com/Rouyashiki/YukiPLT):
+    A library for PLT (Procedure Linkage Table) hooking. It is used in the `dex2oat` sub-project to rewrite the command line recorded in the OAT header. **Note:** Built as a static library and linked into `oat_hook` there; it is not compiled into the `external` C++ library itself.
+
 -   [xz-embedded](https://github.com/tukaani-project/xz-embedded):
     A lightweight data compression library with a small footprint. It is used by the ELF parser to decompress the `.gnu_debugdata` section of stripped native libraries.
-
--   [LSPlt](https://github.com/JingMatrix/LSPlt):
-    A library for PLT (Procedure Linkage Table) hooking. It is used in the `dex2oat` sub-project to bypass a detection point. **Note:** This is included as a submodule for project convenience but is not compiled into the `external` C++ library itself.
 
 ## Java libraries
 
