@@ -10,9 +10,9 @@
 [submodule "external/xz-embedded"]
 	path = external/xz-embedded
 	url = https://github.com/tukaani-project/xz-embedded.git
-[submodule "external/lsplt"]
-	path = external/lsplt
-	url = https://github.com/JingMatrix/LSPlt
+[submodule "external/yukiplt"]
+	path = external/yukiplt
+	url = https://github.com/Rouyashiki/YukiPLT
 [submodule "services/libxposed"]
 	path = services/libxposed
 	url = https://github.com/JingMatrix/libxposed-service.git
