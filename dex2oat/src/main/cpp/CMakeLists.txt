@@ -4,22 +4,29 @@ project(dex2oat)
 add_executable(dex2oat dex2oat.cpp)
 add_library(oat_hook SHARED oat_hook.cpp)
 
-OPTION(LSPLT_BUILD_SHARED OFF)
-add_subdirectory(${AEVIX_ROOT}/external/lsplt/lsplt/src/main/jni external)
+# Built into this library rather than shipped beside it: the hook has to be in place before
+# dex2oat asks for its first OAT header, and a second .so would have to be preloaded for that.
+# Static, so the only exported names are the ones this target defines.
+set(YUKIPLT_LIBRARY_TYPE STATIC CACHE STRING "" FORCE)
+# Its default. Full LTO is a long link for a library this size, and the option is an interface one
+# for a static build, so leaving it on would put `-flto=full` on our link line as well.
+set(YUKIPLT_LTO OFF CACHE BOOL "" FORCE)
+add_subdirectory(${AEVIX_ROOT}/external/yukiplt external/yukiplt)
 
 target_include_directories(oat_hook PUBLIC include)
 target_include_directories(dex2oat PUBLIC include)
 target_link_libraries(dex2oat log)
-target_link_libraries(oat_hook log lsplt_static)
+target_link_libraries(oat_hook log yukiplt)
 
 # This one exports nothing: it is preloaded for its constructor, and dex2oat never looks a symbol
-# up in it. Hiding the rest keeps lsplt's names out of the dynamic table.
+# up in it. Hiding the rest keeps the hook library's names out of the dynamic table.
 set_target_properties(oat_hook PROPERTIES
         CXX_VISIBILITY_PRESET hidden
         C_VISIBILITY_PRESET hidden
         VISIBILITY_INLINES_HIDDEN ON)
-# lsplt is a static library compiled without the preset, so its names would still be exported.
-# Nothing outside this library looks anything up in it, so nothing is exported at all.
+# YukiPLT is a static library with its own hidden preset, so its names never reach the dynamic
+# table; this keeps anything else from adding one. Nothing outside this library looks anything up
+# in it, so nothing is exported at all.
 target_link_options(oat_hook PRIVATE
         "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/oat_hook.map")
 

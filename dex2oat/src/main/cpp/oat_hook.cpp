@@ -3,11 +3,11 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
-#include <lsplt.hpp>
 #include <map>
 #include <string>
 #include <string_view>
 #include <vector>
+#include <yukiplt.hpp>
 
 #include "logging.h"
 #include "oat.h"
@@ -198,45 +198,89 @@ DCL_HOOK_FUNC(void, _ZNK3art9OatHeader15ComputeChecksumEPj, void* header, uint32
 
 #undef DCL_HOOK_FUNC
 
-void register_hook(dev_t dev, ino_t inode, const char* symbol, void* new_func, void** old_func) {
-    if (!lsplt::RegisterHook(dev, inode, symbol, new_func, old_func)) {
-        LOGE("Failed to register PLT hook: %s", symbol);
+/**
+ * The original implementation of [symbol], looked up by name.
+ *
+ * Deliberately not taken from the original that YukiPLT publishes for the slot: that value is
+ * whatever the GOT entry held, and a JUMP_SLOT dex2oat has not called yet still holds zero. A
+ * wrapper that calls through zero crashes instead of hooking nothing, so the definition is
+ * resolved from the dynamic symbol table, which answers whether or not the slot was ever bound.
+ */
+void* ResolveOriginal(const char* symbol) {
+    void* original = dlsym(RTLD_DEFAULT, symbol);
+    if (original == nullptr) {
+        LOGE("Could not resolve %s, which dex2oat is expected to import", symbol);
     }
+    return original;
 }
 
-#define PLT_HOOK_REGISTER_SYM(DEV, INODE, SYM, NAME)                                               \
-    register_hook(DEV, INODE, SYM, reinterpret_cast<void*>(new_##NAME),                            \
-                  reinterpret_cast<void**>(&old_##NAME))
+/**
+ * Installs one replacement over [symbol] in [image], and leaves it installed.
+ *
+ * YukiPLT has no separate commit step: a request either writes the slot or changes nothing, so the
+ * old register-then-commit pair collapses into one call whose result is the whole answer.
+ */
+bool InstallHook(const yukiplt::NamedImage& image, const char* symbol, void* replacement,
+                 void** original) {
+    void* fallback = ResolveOriginal(symbol);
+    if (fallback == nullptr) return false;
 
-#define PLT_HOOK_REGISTER(DEV, INODE, NAME) PLT_HOOK_REGISTER_SYM(DEV, INODE, #NAME, NAME)
+    yukiplt::SlotReport report{};
+    void* published = nullptr;
+    auto result = yukiplt::hook_named(image, symbol, replacement, &published, &report);
 
-__attribute__((constructor)) static void initialize() {
-    dev_t dev = 0;
-    ino_t inode = 0;
-
-    // Locate the dex2oat binary in memory to get its device and inode for PLT hooking
-    for (const auto& info : lsplt::MapInfo::Scan()) {
-        if (info.path.find("bin/dex2oat") != std::string::npos) {
-            dev = info.dev;
-            inode = info.inode;
-            if (g_binary_path.empty()) g_binary_path = std::string(info.path);
-            LOGD("Found target: %s (dev: %ju, inode: %ju)", info.path.data(), (uintmax_t)dev,
-                 (uintmax_t)inode);
-            break;
-        }
+    if (!result.ok()) {
+        LOGE("Failed to hook %s: %s (errno %d)", symbol, yukiplt::error_name(result.error.code),
+             result.error.sys_errno);
+        // Indeterminate is the one failure that still owns recovery state, and it is the one that
+        // returns a handle to prove it.
+        if (result.handle.valid()) yukiplt::abandon(result.handle);
+        return false;
     }
 
-    if (dev == 0) {
-        LOGE("Could not locate dex2oat memory map");
+    // Another framework's replacement, when the slot had already been taken before this ran;
+    // otherwise the definition resolved above.
+    *original = published != nullptr ? published : fallback;
+
+    // The hook has to outlive this function for as long as dex2oat runs, and an owned handle that
+    // outlives the process is what its destructor is documented to warn about. Abandoning drops
+    // the bookkeeping and leaves the slot written.
+    yukiplt::abandon(result.handle);
+    LOGI("Hooked %s (slot 0x%08lx)", symbol, static_cast<unsigned long>(report.address));
+    return true;
+}
+
+#define INSTALL_HOOK(SYM)                                                                          \
+    InstallHook(image, #SYM, reinterpret_cast<void*>(new_##SYM),                                   \
+                reinterpret_cast<void**>(&old_##SYM))
+
+__attribute__((constructor)) static void initialize() {
+    // dex2oat is the main executable of the process this library is preloaded into, and YukiPLT
+    // selects it by its AT_PHDR rather than by a path: a path is a string vendors rewrite, and the
+    // device/inode pair the previous implementation scanned maps for says nothing about which
+    // image is which once a module has bound over the original.
+    yukiplt::ImageSelector selector;
+
+    auto images = yukiplt::find_images(selector);
+    if (!images.has_value()) {
+        LOGE("Could not enumerate images: %s", yukiplt::error_name(images.error().code));
+        return;
+    }
+    if (images.value().empty()) {
+        LOGE("Could not locate the dex2oat image");
         return;
     }
 
-    // Register hook for the standard KeyValueStore getter
-    PLT_HOOK_REGISTER(dev, inode, _ZNK3art9OatHeader16GetKeyValueStoreEv);
+    const yukiplt::NamedImage& image = images.value().front();
+    LOGD("Found target: %s", image.path.empty() ? "(main executable)" : image.path.c_str());
 
-    // If the standard store hook fails (e.g., on Android 16+), try the Checksum hook
-    if (!lsplt::CommitHook()) {
-        PLT_HOOK_REGISTER(dev, inode, _ZNK3art9OatHeader15ComputeChecksumEPj);
-        lsplt::CommitHook();
+    if (g_binary_path.empty()) {
+        LOGW("DEX2OAT_CMD is unset, so the OAT cmdline keeps this wrapper's path");
+    }
+
+    // The standard KeyValueStore getter, and on Android 16+ the checksum pass, which is the point
+    // the header is written through instead.
+    if (!INSTALL_HOOK(_ZNK3art9OatHeader16GetKeyValueStoreEv)) {
+        INSTALL_HOOK(_ZNK3art9OatHeader15ComputeChecksumEPj);
     }
 }
