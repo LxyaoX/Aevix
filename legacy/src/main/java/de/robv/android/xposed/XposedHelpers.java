@@ -31,7 +31,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Helpers that simplify hooking and calling methods/constructors, getting and settings fields, ...
