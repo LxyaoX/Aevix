@@ -1,7 +1,6 @@
 package org.aevix.daemon.data
 
 import java.nio.file.Path
-import org.aevix.daemon.BuildConfig
 import org.aevix.ipc.LoadedModule
 
 data class ProcessScope(val processName: String, val uid: Int)
@@ -13,13 +12,20 @@ data class ProcessScope(val processName: String, val uid: Int)
 data class DaemonState(
     // State non configurable for users.
     //
-    // This is not a flag about modules: it is the framework's hiding. Before a DEX is handed to a
-    // process, its entry classes are renamed to names drawn fresh on every boot, so a scan for a
-    // hook framework's classes finds nothing to name. Off, every injected process maps a DEX that
-    // says `org.aevix.core.Main` outright, which is what a detector reports as a hook framework
-    // being present. It also drives PROP_RT_API_PROTECTION, which is what tells modules the
-    // protection is on. Turning it off is one line here; nothing else decides.
-    val isDexObfuscateEnabled: Boolean = !BuildConfig.DEBUG,
+    // One flag for two things, because the framework treats them as one: the DEX hiding, and the
+    // Xposed API call protection it advertises through PROP_RT_API_PROTECTION.
+    //
+    // On, a DEX handed to a process has its entry classes renamed to names drawn fresh on every
+    // boot, so a scan for a hook framework's classes finds nothing to name; and module code that
+    // loads a DEX at run time has no Xposed API to reach. The second part is the point of the
+    // protection, and it is also what breaks a module whose implementation lives in a dynamically
+    // loaded class rather than in the entry class: it installs nothing and reports nothing.
+    //
+    // Off, as here: an injected process maps a DEX that says `org.aevix.core.Main` outright, which
+    // is what a detector reports as a hook framework being present. That trade is deliberate — a
+    // module that silently hooks nothing is the worse failure of the two. Turning it on is one
+    // line here; nothing else decides.
+    val isDexObfuscateEnabled: Boolean = false,
     // States initialized after system services are ready
     val isCacheReady: Boolean = false,
     val managerUid: Int = -1,
