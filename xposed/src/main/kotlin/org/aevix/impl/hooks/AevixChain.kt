@@ -48,7 +48,17 @@ class AevixChain(
 
     override fun getThisObject(): Any? = thisObj
 
-    override fun getArgs(): List<Any?> = Collections.unmodifiableList(args.toMutableList())
+    @Volatile private var argsSnapshot: List<Any?>? = null
+
+    override fun getArgs(): List<Any?> {
+        argsSnapshot?.let { return it }
+
+        // Preserve the API's detached, read-only snapshot semantics, but build it at most once
+        // for this chain node instead of copying the array on every getArgs() call.
+        val snapshot = Collections.unmodifiableList(args.toMutableList())
+        argsSnapshot = snapshot
+        return snapshot
+    }
 
     override fun getArg(index: Int): Any? = args[index]
 
