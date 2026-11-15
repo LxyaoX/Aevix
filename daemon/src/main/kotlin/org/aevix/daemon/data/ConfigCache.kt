@@ -276,7 +276,10 @@ object ConfigCache {
 
         FileSystem.readStaticScope(apkPath)?.let { newStaticScopes[pkgName] = it }
 
-        when (val loaded = FileSystem.loadModule(apkPath, state.isDexObfuscateEnabled)) {
+        val loaded =
+            FileSystem.loadModule(
+                apkPath, state.isDexObfuscateEnabled, state.isApiProtectionEnabled)
+        when (loaded) {
           is ModuleLoad.Loaded -> {
             val module =
                 LoadedModule().apply {
@@ -547,7 +550,9 @@ object ConfigCache {
               uid = module.appId
             }
 
-            FileSystem.loadModule(apkPath, state.isDexObfuscateEnabled).apkOrNull?.let {
+            FileSystem.loadModule(apkPath, state.isDexObfuscateEnabled, state.isApiProtectionEnabled)
+                .apkOrNull
+                ?.let {
               module.code = it
               stageNativeLibrariesFor(module)
               modules.add(module)

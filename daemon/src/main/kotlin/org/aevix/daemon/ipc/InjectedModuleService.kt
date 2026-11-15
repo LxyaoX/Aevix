@@ -34,7 +34,9 @@ class InjectedModuleService(private val packageName: String) : IModuleService.St
 
   override fun getFrameworkProperties(): Long {
     var prop = IXposedService.PROP_CAP_SYSTEM or IXposedService.PROP_CAP_REMOTE
-    if (ConfigCache.state.isDexObfuscateEnabled) {
+    // Same answer as the module's own service gives: the flag is about the API call protection,
+    // which is the switch that decides whether the API packages were renamed.
+    if (ConfigCache.state.isApiProtectionEnabled) {
       prop = prop or IXposedService.PROP_RT_API_PROTECTION
     }
     return prop
