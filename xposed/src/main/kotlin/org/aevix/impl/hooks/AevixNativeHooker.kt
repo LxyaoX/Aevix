@@ -152,6 +152,8 @@ class AevixHookBuilder(
  * The native callback entrypoint. Instantiated natively by [HookBridge] when a hooked method is
  * hit.
  */
+private val EMPTY_HOOK_ARGUMENTS = emptyArray<Any?>()
+
 class AevixNativeHooker<T : Executable>(private val method: T) {
 
     private val isStatic = Modifier.isStatic(method.modifiers)
@@ -160,7 +162,12 @@ class AevixNativeHooker<T : Executable>(private val method: T) {
     /** Invoked by C++ via JNI. */
     fun callback(args: Array<Any?>): Any? {
         val thisObject = if (isStatic) null else args[0]
-        val actualArgs = if (isStatic) args else args.sliceArray(1 until args.size)
+        val actualArgs =
+            when {
+                isStatic -> args
+                args.size == 1 -> EMPTY_HOOK_ARGUMENTS
+                else -> args.copyOfRange(1, args.size)
+            }
 
         // Null means every hook was removed after this trampoline was entered.
         val snapshots =
