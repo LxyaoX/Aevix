@@ -276,7 +276,10 @@ object ConfigCache {
 
         FileSystem.readStaticScope(apkPath)?.let { newStaticScopes[pkgName] = it }
 
-        when (val loaded = FileSystem.loadModule(apkPath, state.isDexObfuscateEnabled)) {
+        val loaded =
+            FileSystem.loadModule(
+                apkPath, state.isDexObfuscateEnabled, state.isApiProtectionEnabled)
+        when (loaded) {
           is ModuleLoad.Loaded -> {
             val module =
                 LoadedModule().apply {
@@ -547,7 +550,9 @@ object ConfigCache {
               uid = module.appId
             }
 
-            FileSystem.loadModule(apkPath, state.isDexObfuscateEnabled).apkOrNull?.let {
+            FileSystem.loadModule(apkPath, state.isDexObfuscateEnabled, state.isApiProtectionEnabled)
+                .apkOrNull
+                ?.let {
               module.code = it
               stageNativeLibrariesFor(module)
               modules.add(module)
@@ -571,7 +576,7 @@ object ConfigCache {
   private fun stageNativeLibrariesFor(module: LoadedModule) {
     val file = module.code ?: return
     // system_server asks for its modules early enough that the cache may not have been built yet,
-    // and this is the same reason getPrefsPath does not trust the field either.
+    // so the path is resolved here rather than read off the snapshot.
     setupMiscPath()
     val misc = state.miscPath ?: return
     file.nativeLibraryDir =
@@ -605,46 +610,5 @@ object ConfigCache {
   fun shouldSkipProcess(scope: ProcessScope): Boolean {
     ensureCacheReady()
     return !state.scopes.containsKey(scope)
-  }
-
-  fun getPrefsPath(packageName: String, uid: Int): String {
-    setupMiscPath()
-    val basePath = state.miscPath ?: throw IllegalStateException("Fatal: miscPath not initialized!")
-
-    val userId = uid / PER_USER_RANGE
-    val userSuffix = if (userId == 0) "" else userId.toString()
-    val path = basePath.resolve("prefs$userSuffix").resolve(packageName)
-
-    val module = state.modules[packageName]
-    if (module != null && module.appId == uid % PER_USER_RANGE) {
-      runCatching {
-            // Ensure the directory exists first
-            if (!Files.exists(path)) {
-              Files.createDirectories(path)
-            }
-
-            Files.walk(path).use { stream ->
-              stream.forEach { p ->
-                val pathStr = p.toString()
-
-                // Change Owner
-                Os.chown(pathStr, uid, uid)
-
-                // Set Permissions using Octal
-                // Root folder must be word-readable for monitoring
-                val mode =
-                    when {
-                      p == path -> "755".toInt(8) // Root folder: 755
-                      Files.isDirectory(p) -> "711".toInt(8) // Sub-folders: 711
-                      else -> "744".toInt(8) // Files: 744
-                    }
-
-                Os.chmod(pathStr, mode)
-              }
-            }
-          }
-          .onFailure { Log.e(TAG, "Failed to prepare prefs path: $path", it) }
-    }
-    return path.toString()
   }
 }

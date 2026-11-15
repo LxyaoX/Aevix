@@ -37,9 +37,6 @@ interface IFrameworkService {
      */
     List<LoadedModule> getModules();
 
-    /** Where this process should look for a module's XSharedPreferences files. */
-    String getPrefsPath(String packageName);
-
     /**
      * The manager APK, opened read-only once its signature has been verified against the one this
      * framework was built with. Null when it is missing or does not verify.
