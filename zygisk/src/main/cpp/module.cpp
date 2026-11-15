@@ -279,8 +279,6 @@ void AevixModule::preAppSpecialize(zygisk::AppSpecializeArgs *args) {
         }
     }
 
-    IPCBridge::GetInstance().Initialize(env_);
-
     // --- Injection Decision Logic ---
     // Determine if the current process is a valid target for injection.
     lsplant::JUTFString nice_name_str(env_, args->nice_name);
@@ -306,6 +304,9 @@ void AevixModule::preAppSpecialize(zygisk::AppSpecializeArgs *args) {
              app_id);
         return;
     }
+
+    // Only processes that passed every inexpensive exclusion check need Binder/JNI setup.
+    IPCBridge::GetInstance().Initialize(env_);
 
     // If we passed all checks, mark this process for injection.
     should_inject_ = true;
