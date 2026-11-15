@@ -165,7 +165,10 @@ class AevixNativeHooker<T : Executable>(private val method: T) {
         val actualArgs =
             when {
                 isStatic -> args
-                args.size == 1 -> EMPTY_HOOK_ARGUMENTS
+                // `<= 1` rather than `== 1`: a zero-length array has no `this` to strip either, and
+                // the branch below would throw on it. The trampoline should never hand one over,
+                // but this is the only arm that can fail on input it does not control.
+                args.size <= 1 -> EMPTY_HOOK_ARGUMENTS
                 else -> args.copyOfRange(1, args.size)
             }
 
