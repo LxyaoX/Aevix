@@ -68,7 +68,9 @@ public fun OnlineModule.releasesOn(channel: StoreChannel): List<Release> {
     val published = releases.orEmpty().filter { it.isDraft != true }
     if (channel == StoreChannel.Prerelease) {
         val beta = betaReleases.orEmpty().filter { it.isDraft != true }
-        if (beta.isEmpty()) return published
+        // No early return for an empty `beta`: a detail record keeps its prereleases in `releases`
+        // with `isPrerelease` set rather than in a separate array, so an empty `betaReleases` says
+        // nothing about whether this module has one.
         return (published + beta)
             .distinctBy { it.tagName ?: it.id ?: it.name }
             .sortedByDescending { it.version?.versionCode ?: Long.MIN_VALUE }
