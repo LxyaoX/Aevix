@@ -224,23 +224,31 @@ object FrameworkService : IFrameworkService.Stub() {
   /**
    * The obfuscation map, as `count then key/value pairs` at the current position of [reply].
    *
-   * Values are the names the framework drew this boot; with the feature off, each name maps to
-   * itself so a caller can rewrite unconditionally.
+   * Entries are exactly the prefixes the API protection switch covers: with it off, the API
+   * packages are absent rather than mapped to themselves, which is what a caller needs — a name
+   * that is not in the table was not rewritten, so it resolves as written. Values are the names
+   * drawn this boot.
+   *
+   * With DEX obfuscation off nothing was renamed at all, so every value collapses to its key and a
+   * caller can still rewrite unconditionally.
    */
   private fun writeObfuscationMap(reply: Parcel) {
-    val obfuscation = ConfigCache.state.isDexObfuscateEnabled
-    val signatures = ObfuscationManager.getSignatures()
+    val state = ConfigCache.state
+    val signatures = ObfuscationManager.getSignatures(state.isApiProtectionEnabled)
     reply.writeInt(signatures.size * 2)
     for ((key, value) in signatures) {
       reply.writeString(key)
-      reply.writeString(if (obfuscation) value else key)
+      reply.writeString(if (state.isDexObfuscateEnabled) value else key)
     }
   }
 
   override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
     when (code) {
       DEX_TRANSACTION_CODE -> {
-        val shm = FileSystem.getPreloadDex(ConfigCache.state.isDexObfuscateEnabled) ?: return false
+        val state = ConfigCache.state
+        val shm =
+            FileSystem.getPreloadDex(state.isDexObfuscateEnabled, state.isApiProtectionEnabled)
+                ?: return false
         reply?.writeNoException()
         reply?.let { shm.writeToParcel(it, 0) }
         reply?.writeLong(shm.size.toLong())
@@ -297,11 +305,6 @@ object FrameworkService : IFrameworkService.Stub() {
   override fun getLegacyModules() = getAllModules().filter { it.code.legacy }
 
   override fun isLogMuted(): Boolean = !ManagerService.isVerboseLogEnabled()
-
-  override fun getPrefsPath(packageName: String): String {
-    val info = ensureRegistered()
-    return ConfigCache.getPrefsPath(packageName, info.key.uid)
-  }
 
   override fun openManagerApk(): ParcelFileDescriptor? {
     ensureRegistered()

@@ -23,11 +23,37 @@ namespace {
 
 std::once_flag init_flag;
 
-std::map<std::string, std::string> signatures = {
-    {"Lde/robv/android/xposed/", ""},         {"Landroid/app/AndroidApp", ""},
-    {"Landroid/content/res/XRes", ""},        {"Landroid/content/res/XModule", ""},
-    {"Lio/github/libxposed/api/Xposed", ""},  {"Lorg/aevix/core/", ""},
-    {"Lorg/aevix/nativebridge/", ""}, {"Lorg/aevix/service/", ""},
+/**
+ * One prefix the framework can rewrite in a DEX, and which protection it belongs to.
+ *
+ * Both groups hide something, but they cost different things, which is why they are separate
+ * switches.
+ *
+ * The framework's own names (`org/aevix/*`, and the Android-app shims beside them) are renamed so
+ * a scan for a hook framework's classes finds nothing to name. Every module compiled against the
+ * API keeps working, because the module's own DEX is renamed with the same table in the same boot:
+ * the reference and the definition are the same name on both sides.
+ *
+ * The Xposed API packages are renamed for a different reason — that is what stops code the
+ * framework never processed from reaching the API at all. A DEX a module loads at run time is not
+ * rewritten, so it spells `de.robv.android.xposed.XposedBridge` out and there is no such name left
+ * to find. That is the API call protection, and it is the half that breaks modules.
+ */
+struct Signature {
+    std::string from;
+    std::string to;
+    bool api;
+};
+
+std::vector<Signature> signatures = {
+    {"Lde/robv/android/xposed/", "", true},
+    {"Landroid/app/AndroidApp", "", false},
+    {"Landroid/content/res/XRes", "", false},
+    {"Landroid/content/res/XModule", "", false},
+    {"Lio/github/libxposed/api/Xposed", "", true},
+    {"Lorg/aevix/core/", "", false},
+    {"Lorg/aevix/nativebridge/", "", false},
+    {"Lorg/aevix/service/", "", false},
 };
 
 /**
@@ -48,6 +74,7 @@ struct ObfuscationRule {
     std::string to;
     std::string dotted_from;
     std::string dotted_to;
+    bool api;
 };
 
 std::vector<ObfuscationRule> rules;
@@ -133,15 +160,18 @@ static void ensureInitialized(JNIEnv *env) {
             return out;
         };
 
+        // Drawn for every signature, including the ones a disabled switch will not use: the table
+        // is what `getSignatures` hands out, and a name that appeared only when the switch flipped
+        // would differ between the two answers within one boot.
         for (auto &i : signatures) {
-            i.second = regen(i.first);
-            LOGV("%s => %s", i.first.c_str(), i.second.c_str());
+            i.to = regen(i.from);
+            LOGV("%s => %s", i.from.c_str(), i.to.c_str());
         }
 
         // Filled after the names are drawn, so a rule's two spellings are always the same name.
         rules.reserve(signatures.size());
         for (const auto &i : signatures) {
-            rules.push_back({i.first, i.second, to_java(i.first), to_java(i.second)});
+            rules.push_back({i.from, i.to, to_java(i.from), to_java(i.to), i.api});
         }
 
         LOGD("ObfuscationManager init successfully");
@@ -176,25 +206,34 @@ static jobject stringMapToJavaHashMap(JNIEnv *env, const std::map<std::string, s
 
 extern "C" JNIEXPORT jobject JNICALL
 Java_org_aevix_daemon_utils_ObfuscationManager_getSignatures(
-    JNIEnv *env, [[maybe_unused]] jclass clazz) {
+    JNIEnv *env, [[maybe_unused]] jclass clazz, jboolean api_protection) {
     ensureInitialized(env);
 
-    static jobject signatures_jni = nullptr;
-    static std::once_flag jni_map_flag;
+    // One cached map per answer. The set differs, and the caller on the other side of the binder
+    // keeps whatever it is given for the life of the process, so a single slot would hand one of
+    // the two callers the other one's table.
+    static jobject with_api = nullptr;
+    static jobject without_api = nullptr;
+    static std::once_flag with_api_flag;
+    static std::once_flag without_api_flag;
+
+    jobject *cached = api_protection ? &with_api : &without_api;
+    std::once_flag *flag = api_protection ? &with_api_flag : &without_api_flag;
 
     // Thread-safe, one-time JNI HashMap translation
-    std::call_once(jni_map_flag, [&]() {
+    std::call_once(*flag, [&]() {
         std::map<std::string, std::string> signatures_java;
         for (const auto &i : signatures) {
-            signatures_java[to_java(i.first)] = to_java(i.second);
+            if (i.api && !api_protection) continue;
+            signatures_java[to_java(i.from)] = to_java(i.to);
         }
-        signatures_jni = stringMapToJavaHashMap(env, signatures_java);
+        *cached = stringMapToJavaHashMap(env, signatures_java);
     });
 
-    return signatures_jni;
+    return *cached;
 }
 
-static int obfuscateDexBuffer(const void *dex_data, size_t size) {
+static int obfuscateDexBuffer(const void *dex_data, size_t size, bool api_protection) {
     dex::Reader reader{reinterpret_cast<const dex::u1 *>(dex_data), size};
     reader.CreateFullIr();
     auto ir = reader.GetIr();
@@ -206,6 +245,9 @@ static int obfuscateDexBuffer(const void *dex_data, size_t size) {
     for (auto &i : ir->strings) {
         char *s = const_cast<char *>(i->c_str());
         for (const auto &rule : rules) {
+            // The API packages are left spelled out when their protection is off, which is the
+            // whole point: a DEX loaded at run time has to be able to name them.
+            if (rule.api && !api_protection) continue;
             if (char *p = strstr(s, rule.from.c_str())) {
                 memcpy(p, rule.to.c_str(), rule.from.length());
             }
@@ -229,7 +271,8 @@ static int obfuscateDexBuffer(const void *dex_data, size_t size) {
 extern "C" JNIEXPORT jobject JNICALL
 Java_org_aevix_daemon_utils_ObfuscationManager_obfuscateDex(JNIEnv *env,
                                                                     [[maybe_unused]] jclass clazz,
-                                                                    jobject memory) {
+                                                                    jobject memory,
+                                                                    jboolean api_protection) {
     ensureInitialized(env);
 
     int fd = ASharedMemory_dupFromJava(env, memory);
@@ -261,6 +304,7 @@ Java_org_aevix_daemon_utils_ObfuscationManager_obfuscateDex(JNIEnv *env,
 
     bool needs_obfuscation = false;
     for (const auto &rule : rules) {
+        if (rule.api && !api_protection) continue;
         if (memmem(mem, size, rule.from.c_str(), rule.from.length()) != nullptr ||
             memmem(mem, size, rule.dotted_from.c_str(), rule.dotted_from.length()) != nullptr) {
             needs_obfuscation = true;
@@ -281,7 +325,7 @@ Java_org_aevix_daemon_utils_ObfuscationManager_obfuscateDex(JNIEnv *env,
     }
 
     // Process the DEX and obtain a new file descriptor for the output
-    int new_fd = obfuscateDexBuffer(mem, size);
+    int new_fd = obfuscateDexBuffer(mem, size, api_protection);
 
     // Safely unmap and close the input buffer mapping
     munmap(mem, size);

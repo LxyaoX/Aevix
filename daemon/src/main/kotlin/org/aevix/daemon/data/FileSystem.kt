@@ -239,14 +239,18 @@ object FileSystem {
   }
 
   /** Loads a single DEX file into SharedMemory, optionally applying obfuscation. */
-  private fun readDex(inputStream: InputStream, obfuscate: Boolean): SharedMemory {
+  private fun readDex(
+      inputStream: InputStream,
+      obfuscate: Boolean,
+      apiProtection: Boolean
+  ): SharedMemory {
     var memory = SharedMemory.create(null, inputStream.available())
     val byteBuffer = memory.mapReadWrite()
     Channels.newChannel(inputStream).read(byteBuffer)
     SharedMemory.unmap(byteBuffer)
 
     if (obfuscate) {
-      val newMemory = ObfuscationManager.obfuscateDex(memory)
+      val newMemory = ObfuscationManager.obfuscateDex(memory, apiProtection)
       if (memory !== newMemory) {
         memory.close()
         memory = newMemory
@@ -300,7 +304,7 @@ object FileSystem {
           .getOrNull()
 
   /** Parses the module APK, extracts init lists, and loads DEXes into SharedMemory. */
-  fun loadModule(apkPath: String, obfuscate: Boolean): ModuleLoad {
+  fun loadModule(apkPath: String, obfuscate: Boolean, apiProtection: Boolean): ModuleLoad {
     val file = File(apkPath)
     if (!file.exists()) return ModuleLoad.Unusable
 
@@ -387,7 +391,9 @@ object FileSystem {
             while (true) {
               val entryName = if (secondary == 1) "classes.dex" else "classes$secondary.dex"
               val dexEntry = zip.getEntry(entryName) ?: break
-              zip.getInputStream(dexEntry).use { preLoadedDexes.add(readDex(it, obfuscate)) }
+              zip.getInputStream(dexEntry).use {
+                preLoadedDexes.add(readDex(it, obfuscate, apiProtection))
+              }
               secondary++
             }
           }
@@ -401,7 +407,7 @@ object FileSystem {
 
     // Apply obfuscation
     if (obfuscate) {
-      val signatures = ObfuscationManager.getSignatures()
+      val signatures = ObfuscationManager.getSignatures(apiProtection)
       for (i in moduleClassNames.indices) {
         val s = moduleClassNames[i]
         signatures.entries
@@ -460,10 +466,12 @@ object FileSystem {
   }
 
   @Synchronized
-  fun getPreloadDex(obfuscate: Boolean): SharedMemory? {
+  fun getPreloadDex(obfuscate: Boolean, apiProtection: Boolean): SharedMemory? {
     if (preloadDex == null) {
       runCatching {
-            FileInputStream("framework/aevix.dex").use { preloadDex = readDex(it, obfuscate) }
+            FileInputStream("framework/aevix.dex").use {
+              preloadDex = readDex(it, obfuscate, apiProtection)
+            }
           }
           .onFailure { Log.e(TAG, "Failed to load framework dex", it) }
     }

@@ -141,7 +141,10 @@ object AevixDaemon {
         .onFailure { Log.e(TAG, "CLI socket failed to start", it) }
 
     // Preload Framework DEX in the background
-    scope.launch { FileSystem.getPreloadDex(ConfigCache.state.isDexObfuscateEnabled) }
+    scope.launch {
+      FileSystem.getPreloadDex(
+          ConfigCache.state.isDexObfuscateEnabled, ConfigCache.state.isApiProtectionEnabled)
+    }
 
     // Initializes system frameworks inside the daemon process
     ActivityThread.systemMain()

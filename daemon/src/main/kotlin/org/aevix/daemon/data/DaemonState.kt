@@ -13,13 +13,27 @@ data class ProcessScope(val processName: String, val uid: Int)
 data class DaemonState(
     // State non configurable for users.
     //
-    // This is not a flag about modules: it is the framework's hiding. Before a DEX is handed to a
-    // process, its entry classes are renamed to names drawn fresh on every boot, so a scan for a
-    // hook framework's classes finds nothing to name. Off, every injected process maps a DEX that
-    // says `org.aevix.core.Main` outright, which is what a detector reports as a hook framework
-    // being present. It also drives PROP_RT_API_PROTECTION, which is what tells modules the
-    // protection is on. Turning it off is one line here; nothing else decides.
+    // Two switches, because the two halves of "hiding" cost different things.
+    //
+    // This one is the framework's own names. On, a DEX handed to a process has its `org/aevix/*`
+    // entry classes renamed to names drawn fresh on every boot, so a scan for a hook framework's
+    // classes finds nothing to name. A module compiled against the API is unaffected: its own DEX
+    // is rewritten with the same table in the same boot, so the reference and the definition still
+    // agree. Off, every injected process maps a DEX that says `org.aevix.core.Main` outright.
     val isDexObfuscateEnabled: Boolean = !BuildConfig.DEBUG,
+    //
+    // This one is the Xposed API call protection. On, `de.robv.android.xposed.*` and
+    // `io.github.libxposed.api.Xposed*` join the table, and code the framework never processed — a
+    // DEX a module loads at run time — spells those names out and finds nothing. That is the
+    // protection, and it is also what breaks a module whose implementation lives in a dynamically
+    // loaded class rather than in the entry class: it installs nothing and reports nothing.
+    //
+    // Off here, deliberately. The cost is the API packages' names sitting in the framework DEX as
+    // plain strings; the gain is that every module can reach the API no matter where it keeps its
+    // code. It also decides PROP_RT_API_PROTECTION, which is the flag a module reads to know it
+    // must not reflect into the API — with the protection off, reflection works, so the flag has to
+    // be off with it. Turning either on is one line here; nothing else decides.
+    val isApiProtectionEnabled: Boolean = false,
     // States initialized after system services are ready
     val isCacheReady: Boolean = false,
     val managerUid: Int = -1,

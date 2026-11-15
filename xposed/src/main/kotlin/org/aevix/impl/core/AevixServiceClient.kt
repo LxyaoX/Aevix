@@ -78,10 +78,6 @@ object AevixServiceClient : IFrameworkService, IBinder.DeathRecipient {
         return runCatching { service?.modules }.getOrNull() ?: emptyList()
     }
 
-    override fun getPrefsPath(packageName: String): String? {
-        return runCatching { service?.getPrefsPath(packageName) }.getOrNull()
-    }
-
     override fun openManagerApk(): ParcelFileDescriptor? {
         return runCatching { service?.openManagerApk() }.getOrNull()
     }
