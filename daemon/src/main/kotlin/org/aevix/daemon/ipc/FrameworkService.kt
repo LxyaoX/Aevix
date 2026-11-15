@@ -306,11 +306,6 @@ object FrameworkService : IFrameworkService.Stub() {
 
   override fun isLogMuted(): Boolean = !ManagerService.isVerboseLogEnabled()
 
-  override fun getPrefsPath(packageName: String): String {
-    val info = ensureRegistered()
-    return ConfigCache.getPrefsPath(packageName, info.key.uid)
-  }
-
   override fun openManagerApk(): ParcelFileDescriptor? {
     ensureRegistered()
     return runCatching {
