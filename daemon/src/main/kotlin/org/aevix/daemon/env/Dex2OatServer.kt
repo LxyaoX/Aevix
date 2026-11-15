@@ -186,7 +186,17 @@ object Dex2OatServer {
             }
           }
         }
-        .onFailure { dex2oatArray[dex2oatArray.indexOf(path)] = null }
+        .onFailure { error ->
+          // The candidate may fail before it has been assigned a slot.
+          // In that case indexOf(path) is -1 and must not be used as an array index.
+          val index = dex2oatArray.indexOf(path)
+          if (index >= 0) {
+            dex2oatArray[index] = null
+            fdArray[index]?.let { fd -> runCatching { Os.close(fd) } }
+            fdArray[index] = null
+          }
+          Log.w(TAG, "Failed to inspect dex2oat binary at $path", error)
+        }
   }
 
   private fun notMounted(): Boolean {
