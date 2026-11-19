@@ -124,17 +124,21 @@ object ManagerService : IManagerService.Stub() {
 
   @Synchronized
   fun tryRegisterManagerProcess(pid: Int, uid: Int, processName: String): Boolean {
-    if (ConfigCache.isManager(uid) && processName == BuildConfig.DEFAULT_MANAGER_PACKAGE_NAME) {
-      if (pendingManager) {
-        Log.v(TAG, "Parasitic manager registered.")
-        pendingManager = false
-      } else {
-        Log.v(TAG, "Starting user-installed manager process.")
-      }
-      managerPid = pid
-      return true
+    // The name first, because it is a string compare and `isManager` is a readiness latch: asked in
+    // the other order, every process that forks pays for a cache the answer cannot depend on. Only
+    // one process name on the device can be the manager, and it is not this one in all but one
+    // case.
+    if (processName != BuildConfig.DEFAULT_MANAGER_PACKAGE_NAME) return false
+    if (!ConfigCache.isManager(uid)) return false
+
+    if (pendingManager) {
+      Log.v(TAG, "Parasitic manager registered.")
+      pendingManager = false
+    } else {
+      Log.v(TAG, "Starting user-installed manager process.")
     }
-    return false
+    managerPid = pid
+    return true
   }
 
   /**

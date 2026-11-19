@@ -1,6 +1,17 @@
 cmake_minimum_required(VERSION 3.10)
 project(daemon)
 
+# CMake 3.28 and later scan for C++ modules by default from C++20 on, and for the standard library
+# it runs clang-scan-deps against the *host's* libstdc++ sources -- /usr/include/c++/15/bits/std.cc
+# on the CI image. The sysroot is the NDK's, which has no such file, so the scan fails with
+# "fatal error: 'bits/stdc++.h' file not found" and takes the whole build down.
+#
+# `native`, `zygisk` and `dex2oat` all say this already; this one did not. It stayed green only
+# while ccache still held a result from a configuration whose VERSION_CODE had not changed -- and
+# the NDK 30 toolchain then overwrote the cache variable Gradle passes, which is what made it fail
+# with everything else unchanged.
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+
 set(CMAKE_CXX_STANDARD 23)
 
 add_subdirectory(${AEVIX_ROOT}/external external)
