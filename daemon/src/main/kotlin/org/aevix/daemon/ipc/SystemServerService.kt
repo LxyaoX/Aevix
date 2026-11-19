@@ -149,12 +149,24 @@ object SystemServerService : Binder(), IBinder.DeathRecipient {
    * system_server. Only ever called from [onTransact] below.
    */
   private fun attachProcess(
-      uid: Int,
-      pid: Int,
+      claimedUid: Int,
+      claimedPid: Int,
       processName: String,
       processLifeToken: IBinder?
   ): IFrameworkService? {
+    // The uid and pid in the parcel are whatever the caller wrote. `AevixService.attachProcess`
+    // has always checked `Binder.getCallingUid()` first; this path did not, so any process that
+    // could reach this binder could ask to be registered as system_server — and `registerHeartBeat`
+    // records the pair it is given, which means the entry lands in `processes` under a key the
+    // caller chose. It would not pass `ensureRegistered`, which re-reads the real identity, but it
+    // would displace a real registration if it named one, and the map would grow with every call.
+    val uid = Binder.getCallingUid()
+    val pid = Binder.getCallingPid()
     if (uid != 1000 || processLifeToken == null || processName != "system") return null
+    if (claimedUid != uid || claimedPid != pid) {
+      Log.w(TAG, "Bridge claimed $claimedUid/$claimedPid but the transaction is from $uid/$pid")
+      return null
+    }
 
     // Latched only once the registration has actually succeeded, not on the way in. It used to be
     // set immediately after the gate above, so a registration that then failed — registerHeartBeat

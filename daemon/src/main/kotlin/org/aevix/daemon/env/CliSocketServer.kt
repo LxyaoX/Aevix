@@ -111,15 +111,14 @@ object CliSocketServer {
           val response = CliResponse(success = true, isFdAttached = true)
           output.writeUTF(AevixIPC.gson.toJson(response))
 
-          // Open file and get raw FileDescriptor
-          val fis = FileInputStream(logFile)
-          val fd = fis.fd
-
-          // Attach FD to the next write operation
-          socket.setFileDescriptorsForSend(arrayOf(fd))
-          output.write(1) // Trigger byte to "carry" the ancillary FD data
-
-          // fis is closed when the socket/method finishes
+          // The descriptor is duplicated into the socket by the kernel when the ancillary data is
+          // written, so this side can drop its own reference as soon as `write` returns. It used
+          // to be left to the finalizer, and `socket.close()` does not close it - that is an
+          // unrelated descriptor - so every streamed log leaked one.
+          FileInputStream(logFile).use { fis ->
+            socket.setFileDescriptorsForSend(arrayOf(fis.fd))
+            output.write(1) // Trigger byte to "carry" the ancillary FD data
+          }
           return
         } else {
           output.writeUTF(
