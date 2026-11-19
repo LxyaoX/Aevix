@@ -38,11 +38,16 @@ object HandleSystemServerProcessHooker : XposedInterface.Hooker {
         val result = chain.proceed()
         try {
             val classLoader = Thread.currentThread().contextClassLoader
+            android.util.Log.i(
+                "AevixDiag",
+                "handleSystemServerProcess hook fired cl=$classLoader callback=${callback != null}",
+            )
             if (classLoader != null) {
                 initSystemServer(classLoader)
             }
         } catch (t: Throwable) {
             Utils.logE("System server initialization failed; it continues without Aevix", t)
+            android.util.Log.e("AevixDiag", "handleSystemServerProcess init failed", t)
         }
         return result
     }
@@ -50,6 +55,10 @@ object HandleSystemServerProcessHooker : XposedInterface.Hooker {
     /** Performs system server initialization. */
     @Synchronized
     fun initSystemServer(classLoader: ClassLoader, isLate: Boolean = false) {
+        android.util.Log.i(
+            "AevixDiag",
+            "initSystemServer enter isLate=$isLate already=${systemServerCL != null || initStarted}",
+        )
         if (systemServerCL != null || initStarted) return
         initStarted = true
 
@@ -84,8 +93,13 @@ object HandleSystemServerProcessHooker : XposedInterface.Hooker {
         }
 
         systemServerCL = classLoader
+        android.util.Log.i("AevixDiag", "initSystemServer invoking callback=${callback?.javaClass?.name}")
         runCatching { callback?.onSystemServerLoaded(classLoader) }
-            .onFailure { Utils.logE("System server loaded callback failed", it) }
+            .onFailure {
+                Utils.logE("System server loaded callback failed", it)
+                android.util.Log.e("AevixDiag", "onSystemServerLoaded failed", it)
+            }
+        android.util.Log.i("AevixDiag", "initSystemServer done")
     }
 }
 

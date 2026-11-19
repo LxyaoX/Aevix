@@ -428,10 +428,16 @@ object ParasiticManagerHooker {
     /** Entry point. Checks if the current process should host the parasitic manager. */
     @JvmStatic
     fun start(): Boolean {
+        android.util.Log.i(
+            "AevixDiag",
+            "PMH.start isParasitic=$isParasitic uid=${Process.myUid()} pkg=${ActivityThread.currentPackageName()}",
+        )
         return try {
             // Asked first: a process the daemon did not launch the manager into gets null here,
             // and there is no point opening the APK for it.
-            val managerBinder = AevixServiceClient.requestManagerService() ?: return false
+            val managerBinder = AevixServiceClient.requestManagerService()
+            android.util.Log.i("AevixDiag", "PMH.start requestManagerService=${managerBinder != null}")
+            if (managerBinder == null) return false
             AevixServiceClient.openManagerApk()!!.use { pfd ->
                 val managerService = IManagerService.Stub.asInterface(managerBinder)
 

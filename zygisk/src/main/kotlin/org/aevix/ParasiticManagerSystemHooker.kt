@@ -30,6 +30,7 @@ class ParasiticManagerSystemHooker : HandleSystemServerProcessHooker.Callback {
 
     @SuppressLint("PrivateApi")
     override fun onSystemServerLoaded(classLoader: ClassLoader) {
+        android.util.Log.i("AevixDiag", "PMSH.onSystemServerLoaded cl=$classLoader")
         hookActivityResolution(classLoader)
         hookSplashScreenSuppression(classLoader)
     }
@@ -81,6 +82,14 @@ class ParasiticManagerSystemHooker : HandleSystemServerProcessHooker.Callback {
                 // may contain sensitive data" dialog, which is exactly what was reported.
                 val resolveMethods =
                     supervisorClass.declaredMethods.filter { it.name == "resolveActivity" }
+                android.util.Log.i(
+                    "AevixDiag",
+                    "resolveActivity overloads found=${resolveMethods.size}: " +
+                        resolveMethods.joinToString { m ->
+                            "(${m.parameterTypes.joinToString { t -> t.simpleName }})->" +
+                                m.returnType.simpleName
+                        },
+                )
                 if (resolveMethods.isEmpty()) {
                     Utils.logD("ActivityTaskSupervisor has no resolveActivity; the manager will not redirect")
                 }
@@ -92,20 +101,50 @@ class ParasiticManagerSystemHooker : HandleSystemServerProcessHooker.Callback {
                                 val result = chain.proceed()
 
                                 val intent = chain.args[0] as? Intent ?: return@intercept result
+                                val isManagerLaunch =
+                                    intent.hasCategory(
+                                        BuildConfig.ManagerPackageName + ".LAUNCH_MANAGER")
+                                if (isManagerLaunch) {
+                                    android.util.Log.i(
+                                        "AevixDiag",
+                                        "resolveActivity HIT manager launch: comp=${intent.component} " +
+                                            "resultType=${result?.javaClass?.name} result=$result",
+                                    )
+                                }
+                                if (!isManagerLaunch) return@intercept result
 
-                                // Check if this intent is meant for the Aevix Manager
-                                if (!intent.hasCategory(
-                                        BuildConfig.ManagerPackageName + ".LAUNCH_MANAGER"))
+                                // The result is normally an ActivityInfo. Some ROM revisions wrap
+                                // it in a holder (ResolvedActivityInfo); pull the ActivityInfo out
+                                // by reflection so the redirect works with either shape.
+                                var holder: Any? = null
+                                val originalActivityInfo: ActivityInfo? =
+                                    when (result) {
+                                        is ActivityInfo -> result
+                                        else ->
+                                            result?.javaClass?.let { rc ->
+                                                val field =
+                                                    runCatching {
+                                                            rc.getDeclaredField("activityInfo")
+                                                                .apply { isAccessible = true }
+                                                        }
+                                                        .getOrNull()
+                                                val value = field?.get(result) as? ActivityInfo
+                                                if (value != null) holder = result
+                                                value
+                                            }
+                                    }
+                                if (originalActivityInfo == null) {
+                                    android.util.Log.e(
+                                        "AevixDiag",
+                                        "resolveActivity result has no ActivityInfo: ${result?.javaClass?.name}",
+                                    )
                                     return@intercept result
-
-                                val originalActivityInfo =
-                                    result as? ActivityInfo
-                                        ?: run {
-                                            Utils.logD(
-                                                "Redirection: result is not ActivityInfo (was ${result?.javaClass?.name})"
-                                            )
-                                            return@intercept result
-                                        }
+                                }
+                                android.util.Log.i(
+                                    "AevixDiag",
+                                    "redirecting aInfo.packageName=${originalActivityInfo.packageName} " +
+                                        "expected=${BuildConfig.InjectedPackageName}",
+                                )
 
                                 // We only intercept if it's currently resolving to the shell/fallback
                                 if (originalActivityInfo.packageName !=
@@ -133,7 +172,26 @@ class ParasiticManagerSystemHooker : HandleSystemServerProcessHooker.Callback {
 
                                 // Notify the bridge service that we are about to start the manager
                                 BridgeService.getService()?.preStartManager()
+                                android.util.Log.i(
+                                    "AevixDiag",
+                                    "redirect done -> processName=${redirectedInfo.processName} name=${redirectedInfo.name}",
+                                )
 
+                                // If the ROM wrapped the ActivityInfo, put the redirected copy
+                                // back into the same holder so the caller sees our values.
+                                if (holder != null) {
+                                    runCatching {
+                                            holder!!.javaClass
+                                                .getDeclaredField("activityInfo")
+                                                .apply { isAccessible = true }
+                                                .set(holder, redirectedInfo)
+                                        }
+                                        .onFailure {
+                                            android.util.Log.e(
+                                                "AevixDiag", "failed to set redirected ActivityInfo back", it)
+                                        }
+                                    return@intercept holder
+                                }
                                 redirectedInfo
                             }
                         }
