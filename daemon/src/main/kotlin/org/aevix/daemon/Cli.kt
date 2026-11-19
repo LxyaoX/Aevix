@@ -158,6 +158,13 @@ object OutputFormatter {
   }
 
   private fun printTable(rows: List<Map<String, Any>>) {
+    // An empty result is an answer, not a failure: `scope list` for a module that claims nothing
+    // reaches here, and `first()` on an empty list would end the command with a NoSuchElement.
+    if (rows.isEmpty()) {
+      println("(no rows)")
+      return
+    }
+
     val headers = rows.first().keys.toList()
     val columnWidths = headers.associateWith { it.length }.toMutableMap()
 
@@ -165,14 +172,14 @@ object OutputFormatter {
     for (row in rows) {
       for (header in headers) {
         val length = row[header]?.toString()?.length ?: 0
-        if (length > columnWidths[header]!!) {
+        if (length > columnWidths.getValue(header)) {
           columnWidths[header] = length
         }
       }
     }
 
     // Print Headers
-    val headerRow = headers.joinToString("  ") { it.padEnd(columnWidths[it]!!) }
+    val headerRow = headers.joinToString("  ") { it.padEnd(columnWidths.getValue(it)) }
     println(headerRow.uppercase())
     println("-".repeat(headerRow.length))
 
@@ -180,7 +187,7 @@ object OutputFormatter {
     for (row in rows) {
       println(
           headers.joinToString("  ") { header ->
-            (row[header]?.toString() ?: "").padEnd(columnWidths[header]!!)
+            (row[header]?.toString() ?: "").padEnd(columnWidths.getValue(header))
           })
     }
   }

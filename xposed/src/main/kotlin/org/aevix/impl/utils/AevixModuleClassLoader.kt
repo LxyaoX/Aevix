@@ -73,25 +73,36 @@ class AevixModuleClassLoader : ByteBufferDexClassLoader {
             )
         }
 
-        findLoadedClass(name)?.let {
-            return it
-        }
+        // `ClassLoader.loadClass` takes a lock itself; an override replaces the whole method, so it
+        // has to take one here. Without it two threads resolving the same name both reach
+        // `findClass`, both define the class, and one comes back with
+        // `LinkageError: duplicate class definition` - not a ClassNotFoundException, so nothing on
+        // the calling side is ready for it.
+        //
+        // `this` rather than `getClassLoadingLock(name)`: that method is not in the SDK stub this
+        // compiles against, and it returns `this` for any loader that never called
+        // `registerAsParallelCapable` - which this one has not, so this is the same lock.
+        synchronized(this) {
+            findLoadedClass(name)?.let {
+                return it
+            }
 
-        try {
-            return Any::class.java.classLoader!!.loadClass(name)
-        } catch (ignored: ClassNotFoundException) {}
+            try {
+                return Any::class.java.classLoader!!.loadClass(name)
+            } catch (ignored: ClassNotFoundException) {}
 
-        var fromSuper: ClassNotFoundException? = null
-        try {
-            return findClass(name)
-        } catch (ex: ClassNotFoundException) {
-            fromSuper = ex
-        }
+            var fromSuper: ClassNotFoundException? = null
+            try {
+                return findClass(name)
+            } catch (ex: ClassNotFoundException) {
+                fromSuper = ex
+            }
 
-        try {
-            return parent?.loadClass(name) ?: throw fromSuper
-        } catch (cnfe: ClassNotFoundException) {
-            throw fromSuper
+            try {
+                return parent?.loadClass(name) ?: throw fromSuper
+            } catch (cnfe: ClassNotFoundException) {
+                throw fromSuper
+            }
         }
     }
 

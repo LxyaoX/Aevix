@@ -244,8 +244,9 @@ fun IPackageManager.getInstalledPackagesFromAllUsers(
     val validUserApps =
         infos
             .parallelStream()
-            .filter {
-              it.applicationInfo != null && (it.applicationInfo!!.uid / PER_USER_RANGE) == user.id
+            .filter { pkg ->
+              val info = pkg.applicationInfo ?: return@filter false
+              info.uid / PER_USER_RANGE == user.id
             }
             .filter { isPackageAvailable(it.packageName, user.id, true) }
             .collect(Collectors.toList())
@@ -256,9 +257,10 @@ fun IPackageManager.getInstalledPackagesFromAllUsers(
   if (filterNoProcess) {
     return result
         .parallelStream()
-        .filter {
+        .filter { pkg ->
+          val info = pkg.applicationInfo ?: return@filter false
           getPackageInfoWithComponents(
-                  it.packageName, MATCH_ALL_FLAGS, it.applicationInfo!!.uid / PER_USER_RANGE)
+                  pkg.packageName, MATCH_ALL_FLAGS, info.uid / PER_USER_RANGE)
               ?.fetchProcesses()
               ?.isNotEmpty() == true
         }

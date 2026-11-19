@@ -60,11 +60,13 @@ internal class AevixRemotePreferences(service: IModuleService, group: String) :
                     }
                 }
 
-                synchronized(listeners) {
-                    for (key in changes) {
-                        listeners.forEach { listener ->
-                            listener.onSharedPreferenceChanged(this@AevixRemotePreferences, key)
-                        }
+                // Copied under the lock, called outside it. A listener that registers or
+                // unregisters from inside its own callback would otherwise re-enter this monitor,
+                // and one that blocks would hold up every other registration until it returned.
+                val snapshot = synchronized(listeners) { listeners.toList() }
+                for (key in changes) {
+                    snapshot.forEach { listener ->
+                        listener.onSharedPreferenceChanged(this@AevixRemotePreferences, key)
                     }
                 }
             }

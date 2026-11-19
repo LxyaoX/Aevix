@@ -40,7 +40,7 @@ mount -o bind "$emptyDir" /data/resource-cache
 if [ ! -S "/dev/socket/zygote" ]; then
   # Wait up to ~10 seconds to avoid an infinite hang if something breaks
   wait_count=0
-  while [ ! -S "/dev/socket/zygote" ] &&[ "$wait_count" -lt 100 ]; do
+  while [ ! -S "/dev/socket/zygote" ] && [ "$wait_count" -lt 100 ]; do
     sleep 0.1
     wait_count=$((wait_count + 1))
   done
