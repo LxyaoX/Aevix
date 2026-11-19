@@ -73,12 +73,16 @@ class AevixModuleClassLoader : ByteBufferDexClassLoader {
             )
         }
 
-        // `ClassLoader.loadClass` takes this lock itself; an override replaces the whole method,
-        // so it has to take it here. Without it two threads resolving the same name both reach
-        // `findClass`, both define the class, and one of them comes back with
-        // `LinkageError: duplicate class definition` - which is not a ClassNotFoundException, so
-        // no caller is ready for it.
-        synchronized(getClassLoadingLock(name)) {
+        // `ClassLoader.loadClass` takes a lock itself; an override replaces the whole method, so it
+        // has to take one here. Without it two threads resolving the same name both reach
+        // `findClass`, both define the class, and one comes back with
+        // `LinkageError: duplicate class definition` - not a ClassNotFoundException, so nothing on
+        // the calling side is ready for it.
+        //
+        // `this` rather than `getClassLoadingLock(name)`: that method is not in the SDK stub this
+        // compiles against, and it returns `this` for any loader that never called
+        // `registerAsParallelCapable` - which this one has not, so this is the same lock.
+        synchronized(this) {
             findLoadedClass(name)?.let {
                 return it
             }
