@@ -10,7 +10,7 @@ project(native)
 # Nothing here imports a module, so the scan has nothing to find. It only ever passed before
 # because ccache still held the result from a configuration where VERSION_CODE had not changed;
 # a clean build fails every time.
-set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF CACHE BOOL "" FORCE)
 
 set(CMAKE_CXX_STANDARD 23)
 

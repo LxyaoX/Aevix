@@ -10,7 +10,10 @@ project(external)
 # Nothing here imports a module, so the scan has nothing to find. It only ever passed before
 # because ccache still held the result from a configuration where VERSION_CODE had not changed;
 # a clean build fails every time.
-set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+# A plain directory-scoped `set()` does not reach add_subdirectory() targets that call
+# project() again (lsplant does), and the NDK 30 toolchain re-seeds the cache value after
+# Gradle's -D argument. CACHE + FORCE is the only form that wins in every subdirectory.
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF CACHE BOOL "" FORCE)
 
 set(CMAKE_CXX_STANDARD 23)
 

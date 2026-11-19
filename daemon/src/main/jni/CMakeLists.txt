@@ -10,7 +10,7 @@ project(daemon)
 # while ccache still held a result from a configuration whose VERSION_CODE had not changed -- and
 # the NDK 30 toolchain then overwrote the cache variable Gradle passes, which is what made it fail
 # with everything else unchanged.
-set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF CACHE BOOL "" FORCE)
 
 set(CMAKE_CXX_STANDARD 23)
 
