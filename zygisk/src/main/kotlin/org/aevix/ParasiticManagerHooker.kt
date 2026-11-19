@@ -18,24 +18,11 @@ import de.robv.android.xposed.XC_MethodReplacement
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import hidden.HiddenApiBridge
-import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
 import java.lang.reflect.Method
 import java.util.concurrent.ConcurrentHashMap
 import org.aevix.ipc.IManagerService
 import org.aevix.util.Utils
 import org.aevix.impl.core.AevixServiceClient
-
-/**
- * The manager's cache file from before this framework was renamed.
- *
- * Spelled as bytes and assembled: this file is part of the DEX that every injected process maps,
- * and that name is one a framework scanner looks for. It only has to match a file a previous
- * install left behind in the host's cache, so nothing else reads it.
- */
-private val legacyManagerFile: String =
-    byteArrayOf(108, 115, 112, 111, 115, 101, 100).decodeToString() + ".apk"
 
 /** The "Parasite" logic. Injects the manager APK into a host process (shell). */
 @SuppressLint("StaticFieldLeak")

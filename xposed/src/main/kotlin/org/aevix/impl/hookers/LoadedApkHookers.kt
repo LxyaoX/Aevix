@@ -141,19 +141,18 @@ object LoadedApkCreateAppFactoryHooker : XposedInterface.Hooker {
 
         // onPackageLoaded is part of the API from 29 on, which is below the floor here.
         try {
-                val apkPackageName =
-                    loadedApk.getFieldValue<String>("mPackageName") ?: appInfo.packageName
-                val ctx = PackageContextHelper.resolve(loadedApk, apkPackageName)
+            val apkPackageName =
+                loadedApk.getFieldValue<String>("mPackageName") ?: appInfo.packageName
+            val ctx = PackageContextHelper.resolve(loadedApk, apkPackageName)
 
-                AevixLifecycleManager.dispatchPackageLoaded(
-                    ctx.packageName,
-                    appInfo,
-                    ctx.isFirstPackage,
-                    defaultClassLoader,
-                )
-            } catch (t: Throwable) {
-                Utils.logE("LoadedApkCreateAppFactoryHooker failed", t)
-            }
+            AevixLifecycleManager.dispatchPackageLoaded(
+                ctx.packageName,
+                appInfo,
+                ctx.isFirstPackage,
+                defaultClassLoader,
+            )
+        } catch (t: Throwable) {
+            Utils.logE("LoadedApkCreateAppFactoryHooker failed", t)
         }
 
         return chain.proceed()
