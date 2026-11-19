@@ -66,8 +66,16 @@ object AevixService : IAevixDaemon.Stub() {
       processName: String,
       heartBeat: IBinder
   ): IFrameworkService? {
-    if (Binder.getCallingUid() != 1000) {
+    // The gate is the kernel's answer, not the parcel's. The arguments are still read by the
+    // caller and are still used below, so they are checked against it rather than trusted.
+    val callerUid = Binder.getCallingUid()
+    val callerPid = Binder.getCallingPid()
+    if (callerUid != 1000) {
       Log.w(TAG, "Unauthorized attachProcess call")
+      return null
+    }
+    if (callerPid != pid) {
+      Log.w(TAG, "attachProcess pid $pid claimed by $callerPid; ignoring the claim")
       return null
     }
     if (FrameworkService.hasRegister(uid, pid)) return null
