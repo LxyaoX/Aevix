@@ -92,23 +92,30 @@ object LoadedApkCtorHooker : XposedInterface.Hooker {
         val result = chain.proceed()
         val loadedApk = chain.thisObject ?: return result
 
-        val packageName = loadedApk.getFieldValue<String>("mPackageName") ?: return result
+        // Contained: this runs for every LoadedApk the framework builds, system_server's own
+        // included, and a LoadedApk is built in the middle of package resolution. An exception
+        // here fails the package, and in system_server that means services that never come up.
+        try {
+            val packageName = loadedApk.getFieldValue<String>("mPackageName") ?: return result
 
-        AevixBootstrap.withLegacy { delegate ->
-            if (!delegate.isResourceHookingDisabled) {
-                val resDir = loadedApk.getFieldValue<String>("mResDir")
-                delegate.setPackageNameForResDir(packageName, resDir)
+            AevixBootstrap.withLegacy { delegate ->
+                if (!delegate.isResourceHookingDisabled) {
+                    val resDir = loadedApk.getFieldValue<String>("mResDir")
+                    delegate.setPackageNameForResDir(packageName, resDir)
+                }
             }
-        }
 
-        // OnePlus workaround to avoid custom opt crashing
-        val isPreload =
-            Throwable().stackTrace.any {
-                it.className == "android.app.ActivityThread\$ApplicationThread" &&
-                    it.methodName == "schedulePreload"
+            // OnePlus workaround to avoid custom opt crashing
+            val isPreload =
+                Throwable().stackTrace.any {
+                    it.className == "android.app.ActivityThread\$ApplicationThread" &&
+                        it.methodName == "schedulePreload"
+                }
+            if (!isPreload) {
+                LoadedApkTracker.activeApks.add(loadedApk)
             }
-        if (!isPreload) {
-            LoadedApkTracker.activeApks.add(loadedApk)
+        } catch (t: Throwable) {
+            Utils.logE("LoadedApk construction hook failed", t)
         }
 
         return result
@@ -124,23 +131,30 @@ object LoadedApkCreateAppFactoryHooker : XposedInterface.Hooker {
         // Ensure we only dispatch for instances we are tracking
         if (!LoadedApkTracker.activeApks.contains(loadedApk)) return chain.proceed()
 
-        val appInfo = chain.args[0] as ApplicationInfo
+        // `as ApplicationInfo` on an argument the framework chose: a ROM that widened the parameter
+        // would make this a ClassCastException inside `createAppFactory`, which is a package that
+        // cannot be created rather than a hook that did not run.
+        val appInfo = chain.args.firstOrNull() as? ApplicationInfo ?: return chain.proceed()
         val defaultClassLoader =
-            chain.args[1] as? ClassLoader
+            chain.args.getOrNull(1) as? ClassLoader
                 ?: return chain.proceed() // Skip dispatch if there's no ClassLoader
 
         // Only dispatch if on API 29+ per libxposed API specification
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val apkPackageName =
-                loadedApk.getFieldValue<String>("mPackageName") ?: appInfo.packageName
-            val ctx = PackageContextHelper.resolve(loadedApk, apkPackageName)
+            try {
+                val apkPackageName =
+                    loadedApk.getFieldValue<String>("mPackageName") ?: appInfo.packageName
+                val ctx = PackageContextHelper.resolve(loadedApk, apkPackageName)
 
-            AevixLifecycleManager.dispatchPackageLoaded(
-                ctx.packageName,
-                appInfo,
-                ctx.isFirstPackage,
-                defaultClassLoader,
-            )
+                AevixLifecycleManager.dispatchPackageLoaded(
+                    ctx.packageName,
+                    appInfo,
+                    ctx.isFirstPackage,
+                    defaultClassLoader,
+                )
+            } catch (t: Throwable) {
+                Utils.logE("LoadedApkCreateAppFactoryHooker failed", t)
+            }
         }
 
         return chain.proceed()
@@ -153,9 +167,13 @@ object LoadedApkCreateCLHooker : XposedInterface.Hooker {
     override fun intercept(chain: XposedInterface.Chain): Any? {
         val loadedApk = chain.thisObject ?: return chain.proceed()
 
-        // Proceed: Modern modules need onPackageReady even for Split APKs (args[0] != null)
+        // Proceed: Modern modules need onPackageReady even for Split APKs (args[0] != null).
+        // An empty argument list is not an initial load: there is no `addedPaths` argument to be
+        // null, and treating the missing argument as one dispatched the legacy load twice.
         val isInitialLoad =
-            chain.args.firstOrNull() == null && LoadedApkTracker.activeApks.contains(loadedApk)
+            chain.args.isNotEmpty() &&
+                chain.args[0] == null &&
+                LoadedApkTracker.activeApks.contains(loadedApk)
         val result = chain.proceed()
 
         try {

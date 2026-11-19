@@ -41,86 +41,134 @@ object AevixStartup {
 
     @JvmStatic
     fun bootstrap(isSystem: Boolean, systemServerStarted: Boolean) {
+        // Each stage is contained on its own. They are independent — a ROM that cannot be hooked
+        // on one of them is not a reason to skip the rest, and this runs in every process, so the
+        // failure that used to abort the whole sequence here left the process with no hooks at all
+        // and nothing in the log saying which one it was.
+
         // Crash Dump Interceptor
-        Thread::class
-            .java
-            .declaredMethods
-            .firstOrNull { it.name == "dispatchUncaughtException" }
-            ?.let { AevixHookBuilder(it).intercept(CrashDumpHooker) }
+        runCatching {
+                Thread::class
+                    .java
+                    .declaredMethods
+                    .firstOrNull { it.name == "dispatchUncaughtException" }
+                    ?.let { AevixHookBuilder(it).intercept(CrashDumpHooker) }
+            }
+            .onFailure { Utils.logE("Hook on Thread.dispatchUncaughtException failed", it) }
 
         // Process-specific Interceptors
         if (isSystem) {
-            val zygoteInitClass = Class.forName("com.android.internal.os.ZygoteInit")
-            zygoteInitClass.declaredMethods
-                .filter { it.name == "handleSystemServerProcess" }
-                .forEach { AevixHookBuilder(it).intercept(HandleSystemServerProcessHooker) }
-        } else {
-            DexFile::class
-                .java
-                .declaredMethods
-                .filter {
-                    it.name == "openDexFile" ||
-                        it.name == "openInMemoryDexFile" ||
-                        it.name == "openInMemoryDexFiles"
+            runCatching {
+                    val zygoteInitClass = Class.forName("com.android.internal.os.ZygoteInit")
+                    zygoteInitClass.declaredMethods
+                        .filter { it.name == "handleSystemServerProcess" }
+                        .forEach {
+                            AevixHookBuilder(it).intercept(HandleSystemServerProcessHooker)
+                        }
                 }
-                .forEach { AevixHookBuilder(it).intercept(DexTrustHooker) }
+                .onFailure {
+                    Utils.logE("Hook on ZygoteInit.handleSystemServerProcess failed", it)
+                }
+        } else {
+            runCatching {
+                    DexFile::class
+                        .java
+                        .declaredMethods
+                        .filter {
+                            it.name == "openDexFile" ||
+                                it.name == "openInMemoryDexFile" ||
+                                it.name == "openInMemoryDexFiles"
+                        }
+                        .forEach { AevixHookBuilder(it).intercept(DexTrustHooker) }
+                }
+                .onFailure { Utils.logE("Hooks on DexFile failed", it) }
         }
 
         // Application Load Interceptors
-        val loadedApkClass = Class.forName("android.app.LoadedApk")
-        loadedApkClass.declaredConstructors.forEach {
-            // Hook all constructors of LoadedApk to catch early instantiations securely
-            AevixHookBuilder(it).intercept(LoadedApkCtorHooker)
-        }
+        val loadedApkClass =
+            runCatching { Class.forName("android.app.LoadedApk") }
+                .onFailure { Utils.logE("android.app.LoadedApk is missing", it) }
+                .getOrNull()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            loadedApkClass.declaredMethods
-                .filter { it.name == "createAppFactory" }
-                .forEach { AevixHookBuilder(it).intercept(LoadedApkCreateAppFactoryHooker) }
-        }
+        if (loadedApkClass != null) {
+            runCatching {
+                    loadedApkClass.declaredConstructors.forEach {
+                        // Hook all constructors of LoadedApk to catch early instantiations securely
+                        AevixHookBuilder(it).intercept(LoadedApkCtorHooker)
+                    }
+                }
+                .onFailure { Utils.logE("Hooks on LoadedApk constructors failed", it) }
 
-        loadedApkClass.declaredMethods
-            .filter { it.name == "createOrUpdateClassLoaderLocked" }
-            .forEach { AevixHookBuilder(it).intercept(LoadedApkCreateCLHooker) }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                runCatching {
+                        loadedApkClass.declaredMethods
+                            .filter { it.name == "createAppFactory" }
+                            .forEach {
+                                AevixHookBuilder(it).intercept(LoadedApkCreateAppFactoryHooker)
+                            }
+                    }
+                    .onFailure { Utils.logE("Hooks on LoadedApk.createAppFactory failed", it) }
+            }
+
+            runCatching {
+                    loadedApkClass.declaredMethods
+                        .filter { it.name == "createOrUpdateClassLoaderLocked" }
+                        .forEach { AevixHookBuilder(it).intercept(LoadedApkCreateCLHooker) }
+                }
+                .onFailure {
+                    Utils.logE("Hooks on LoadedApk.createOrUpdateClassLoaderLocked failed", it)
+                }
+        }
 
         // ActivityThread Attachment Interceptor
-        val activityThreadClass = Class.forName("android.app.ActivityThread")
-        activityThreadClass.declaredMethods
-            .filter { it.name == "attach" }
-            .forEach { AevixHookBuilder(it).intercept(AppAttachHooker) }
+        runCatching {
+                val activityThreadClass = Class.forName("android.app.ActivityThread")
+                activityThreadClass.declaredMethods
+                    .filter { it.name == "attach" }
+                    .forEach { AevixHookBuilder(it).intercept(AppAttachHooker) }
+            }
+            .onFailure { Utils.logE("Hooks on ActivityThread.attach failed", it) }
 
         // Late System Server Injection
         if (systemServerStarted) {
-            val activityService: IBinder? = android.os.ServiceManager.getService("activity")
-            if (activityService != null) {
-                val classLoader = activityService.javaClass.classLoader
-                if (classLoader != null) {
-                    // Manually trigger the routines that the hooks normally would
-                    HandleSystemServerProcessHooker.initSystemServer(classLoader, isLate = true)
-
-                    // ActivityThread.attach ran before we were injected, so AppAttachHooker will
-                    // never fire here and nothing else instantiates modules. Without this,
-                    // dispatchSystemServerLoaded below would notify an empty module set.
-                    val activityThread = ActivityThread.currentActivityThread()
-                    if (activityThread != null) {
-                        AevixBootstrap.withLegacy { it.loadModules(activityThread) }
-                    } else {
-                        Utils.logW(
-                            "Late system server injection: no current ActivityThread, modules cannot be loaded"
-                        )
-                    }
-
-                    // Say plainly what this is. onSystemServerStarting is documented as "system
-                    // server is ready to start critical services", which is no longer true here -
-                    // the services are already running. Modules that key off it should treat a
-                    // late dispatch as best effort.
-                    Utils.logW(
-                        "Late system server injection: dispatching onSystemServerStarting after " +
-                            "system server has already started; critical services are live"
-                    )
-                    StartBootstrapServicesHooker.dispatchSystemServerLoaded(classLoader)
-                }
-            }
+            runCatching { lateSystemServerInjection() }
+                .onFailure { Utils.logE("Late system server injection failed", it) }
         }
+    }
+
+    /**
+     * The routines the hooks would have driven, run by hand because this process was injected into
+     * a system server that was already past them.
+     *
+     * Split from [bootstrap] so a failure in here — an ActivityThread that cannot be reached yet is
+     * the likely one — does not cost the hooks installed above it.
+     */
+    private fun lateSystemServerInjection() {
+        val activityService: IBinder? = android.os.ServiceManager.getService("activity")
+        val classLoader = activityService?.javaClass?.classLoader ?: return
+
+        // Manually trigger the routines that the hooks normally would
+        HandleSystemServerProcessHooker.initSystemServer(classLoader, isLate = true)
+
+        // ActivityThread.attach ran before we were injected, so AppAttachHooker will
+        // never fire here and nothing else instantiates modules. Without this,
+        // dispatchSystemServerLoaded below would notify an empty module set.
+        val activityThread = ActivityThread.currentActivityThread()
+        if (activityThread != null) {
+            AevixBootstrap.withLegacy { it.loadModules(activityThread) }
+        } else {
+            Utils.logW(
+                "Late system server injection: no current ActivityThread, modules cannot be loaded"
+            )
+        }
+
+        // Say plainly what this is. onSystemServerStarting is documented as "system server is
+        // ready to start critical services", which is no longer true here - the services are
+        // already running. Modules that key off it should treat a late dispatch as best effort.
+        Utils.logW(
+            "Late system server injection: dispatching onSystemServerStarting after " +
+                "system server has already started; critical services are live"
+        )
+        StartBootstrapServicesHooker.dispatchSystemServerLoaded(classLoader)
     }
 }

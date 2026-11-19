@@ -147,10 +147,18 @@ class ParasiticManagerSystemHooker : HandleSystemServerProcessHooker.Callback {
                         activityRecordClass.getDeclaredField("info").apply { isAccessible = true }
 
                     AevixHookBuilder(createMethod).intercept { chain ->
-                        val activityRecord = chain.args[0]
-                        val info = infoField.get(activityRecord) as ActivityInfo
+                        // Both reads are guarded: this runs on the window manager's own thread for
+                        // every activity start, and a throw here would be answered by the
+                        // protective mode replaying the original - which is the right outcome, but
+                        // only after the exception has crossed a path that measures its own
+                        // latency. An unknown shape simply means "not ours".
+                        val activityRecord = chain.args.firstOrNull()
+                        val info =
+                            if (activityRecord == null) null
+                            else runCatching { infoField.get(activityRecord) as? ActivityInfo }
+                                .getOrNull()
 
-                        if (info.processName == BuildConfig.ManagerPackageName) {
+                        if (info?.processName == BuildConfig.ManagerPackageName) {
                             Utils.logD("Suppressing Android 12+ Splash Screen for Aevix Manager.")
                             return@intercept null
                         }
@@ -179,10 +187,14 @@ class ParasiticManagerSystemHooker : HandleSystemServerProcessHooker.Callback {
                         recordClass.getDeclaredField("info").apply { isAccessible = true }
 
                     AevixHookBuilder(showMethod).intercept { chain ->
+                        // Same guard as the API 31+ branch above.
                         val activityRecord = chain.thisObject
-                        val info = infoField.get(activityRecord) as ActivityInfo
+                        val info =
+                            if (activityRecord == null) null
+                            else runCatching { infoField.get(activityRecord) as? ActivityInfo }
+                                .getOrNull()
 
-                        if (info.processName == BuildConfig.ManagerPackageName) {
+                        if (info?.processName == BuildConfig.ManagerPackageName) {
                             Utils.logD("Suppressing Legacy Starting Window for Aevix Manager.")
                             return@intercept null
                         }

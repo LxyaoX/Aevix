@@ -82,7 +82,15 @@ public final class XposedBridge {
                     // ActivityThread for now and the call will throw an NPE. Luckily they check the
                     // nullability of the result configuration. So we hereby set a dummy
                     // ActivityThread to bypass such a situation.
+                    //
+                    // The previous value is put back rather than null: this also runs when the
+                    // framework is injected into a system server that is already up, where
+                    // sCurrentActivityThread holds the real one. Clearing it there is not a
+                    // bypass, it is removing the handle every framework component resolves
+                    // through - and the first one to need it throws where nothing catches it.
                     var fake = XposedHelpers.newInstance(ActivityThread.class);
+                    var previous =
+                            XposedHelpers.getStaticObjectField(ActivityThread.class, "sCurrentActivityThread");
                     XposedHelpers.setStaticObjectField(ActivityThread.class, "sCurrentActivityThread", fake);
                     try {
                         TypedArray ta = res.obtainTypedArray(res.getIdentifier(
@@ -90,7 +98,7 @@ public final class XposedBridge {
                         taClass = ta.getClass();
                         ta.recycle();
                     } finally {
-                        XposedHelpers.setStaticObjectField(ActivityThread.class, "sCurrentActivityThread", null);
+                        XposedHelpers.setStaticObjectField(ActivityThread.class, "sCurrentActivityThread", previous);
                     }
                 }
             } catch (Resources.NotFoundException nfe) {
