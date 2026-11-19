@@ -10,6 +10,7 @@ import java.nio.file.Files
 import java.nio.file.Paths
 import java.nio.file.attribute.PosixFilePermissions
 import java.util.UUID
+import java.util.concurrent.locks.ReentrantLock
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import org.aevix.ipc.IManagerService
@@ -44,10 +45,40 @@ object ConfigCache {
 
   private val cacheUpdateChannel = Channel<Unit>(Channel.CONFLATED)
 
-  // Held for the whole of a rebuild, so that only one runs at a time. The channel serialises the
-  // requests that arrive through it, but not the rebuild the readiness latch starts directly on a
-  // binder thread — two could run at once, read the database in different orders, and whichever
-  // reached the swap last would publish a module set assembled from a half-written configuration.
+  /**
+   * Signalled when `state.isCacheReady` flips true, so that [awaitReady] can be a bounded wait
+   * rather than a poll. A lock and a condition rather than `Object.wait`, because the wait is
+   * timed and the flag it waits on is a `@Volatile` field read outside the lock.
+   */
+  private val readyLock = ReentrantLock()
+  private val readySignal = readyLock.newCondition()
+
+  /**
+   * How long a binder caller may spend waiting for a build it did not start.
+   *
+   * The caller on the common path is `system_server`, through `AevixService.attachProcess`: it
+   * holds one of its own binder threads for the whole of the transaction. Two hundred milliseconds
+   * is short enough that sixteen of them can wait at once without the framework noticing, and long
+   * enough to cover a build that is already almost done.
+   */
+  private const val READY_WAIT_MS = 200L
+
+  /**
+   * How long a process may spend asking which modules it runs inside.
+   *
+   * This is that process's own startup, not system_server's, so the budget is larger: the cost of
+   * giving up here is a process that starts without its modules, and the cost of waiting is a
+   * fraction of one app's launch.
+   */
+  private const val GET_MODULES_WAIT_MS = 3000L
+
+  /** Asks for one cache build; CONFLATED, because a second request during one adds nothing. */
+  private val warmUpChannel = Channel<Unit>(Channel.CONFLATED)
+
+  // Held for the whole of a rebuild, so that only one runs at a time. Two workers start rebuilds
+  // independently -- the channel below and the readiness worker -- and two at once could read the
+  // database in different orders, with whichever reached the swap last publishing a module set
+  // assembled from a half-written configuration.
   private val rebuildLock = Any()
 
   init {
@@ -62,22 +93,91 @@ object ConfigCache {
             .onFailure { Log.e(TAG, "Cache update failed; the next request will try again", it) }
       }
     }
+    // The readiness worker: one build at a time, off every caller's thread. Failures are logged and
+    // leave the cache unbuilt, which the next request retries -- the alternative, propagating here,
+    // would end this coroutine and leave nothing to retry with.
+    AevixDaemon.scope.launch {
+      for (ignored in warmUpChannel) {
+        runCatching { prepareCache() }
+            .onFailure { Log.e(TAG, "Cache build failed; the next request will try again", it) }
+      }
+    }
     applySqliteHelperWorkaround()
   }
 
+  /**
+   * The readiness latch, as a caller that may be a `system_server` binder thread can afford it.
+   *
+   * This used to rebuild the cache in place, on whatever thread asked. That thread is
+   * [org.aevix.daemon.AevixService.attachProcess] on the common path, which is a `system_server`
+   * binder thread: the daemon answers the fork-time binder call for every process that starts,
+   * `system_server` holds one of its binder threads for the whole of that call, and the rebuild
+   * reads the module database and opens every installed APK to look for a module entry. A boot that
+   * starts a dozen apps at once parked most of `system_server`'s binder pool behind a disk walk in
+   * another process; with none of them answering, the watchdog read the silence as a dead framework
+   * and restarted zygote. That is the soft reboot.
+   *
+   * So the rebuild moved to a worker of its own and this became a bounded wait. A warm cache -- the
+   * ordinary case, since [org.aevix.daemon.AevixDaemon] warms it while it still has root -- makes
+   * this a single volatile read.
+   */
   private fun ensureCacheReady() {
-    if (!state.isCacheReady && packageManager?.asBinder()?.isBinderAlive == true) {
-      // The rebuild lock, not `this`: this is the one place that starts a rebuild without going
-      // through the channel, so it has to queue behind a rebuild already in flight rather than
-      // merely behind the short swaps that publish one.
-      synchronized(rebuildLock) {
-        if (!state.isCacheReady) {
-          Log.i(TAG, "System services are ready. Mapping modules and scopes.")
-          updateManager(false)
-          setupMiscPath()
-          performCacheUpdate()
-          synchronized(this) { state = state.copy(isCacheReady = true) }
-        }
+    if (state.isCacheReady) return
+    if (packageManager?.asBinder()?.isBinderAlive != true) return
+    warmUp()
+    awaitReady(READY_WAIT_MS)
+  }
+
+  /** Asks the background worker to build the cache, if it has not been built already. */
+  fun warmUp() {
+    if (state.isCacheReady) return
+    warmUpChannel.trySend(Unit)
+  }
+
+  /**
+   * Waits until the cache is ready or [timeoutMs] has passed, and answers whether it is ready.
+   *
+   * Called on a binder thread only with [READY_WAIT_MS]; [org.aevix.daemon.AevixDaemon.main] uses
+   * a larger budget, and it is not a binder thread.
+   */
+  fun awaitReady(timeoutMs: Long): Boolean {
+    if (state.isCacheReady) return true
+    var leftNanos = timeoutMs * 1_000_000L
+    readyLock.lock()
+    try {
+      while (!state.isCacheReady) {
+        if (leftNanos <= 0L) return false
+        // A broken wait is not a reason to spin: the caller gets the same answer a timeout gives.
+        leftNanos = runCatching { readySignal.awaitNanos(leftNanos) }.getOrNull() ?: return false
+      }
+    } finally {
+      readyLock.unlock()
+    }
+    return true
+  }
+
+  /**
+   * Builds the cache, once, on the warm-up worker.
+   *
+   * The rebuild lock, not `this`: this is the one place that starts a rebuild without going through
+   * [cacheUpdateChannel], so it has to queue behind a rebuild already in flight rather than merely
+   * behind the short swaps that publish one.
+   */
+  private fun prepareCache() {
+    if (state.isCacheReady) return
+    if (packageManager?.asBinder()?.isBinderAlive != true) return
+    synchronized(rebuildLock) {
+      if (state.isCacheReady) return
+      Log.i(TAG, "System services are ready. Mapping modules and scopes.")
+      updateManager(false)
+      setupMiscPath()
+      performCacheUpdate()
+      synchronized(this) { state = state.copy(isCacheReady = true) }
+      readyLock.lock()
+      try {
+        readySignal.signalAll()
+      } finally {
+        readyLock.unlock()
       }
     }
   }
@@ -463,10 +563,16 @@ object ConfigCache {
   }
 
   fun getModulesForProcess(processName: String, uid: Int): List<LoadedModule> {
-    ensureCacheReady()
+    // Asked before the cache, because the answer does not need it and `system_server` must never be
+    // made to wait for a build: this call can arrive on a binder thread of the very process the
+    // wait would stall.
     if (processName == "system_server") {
       Log.w(TAG, "Skip unexpected module queries for $processName")
       return emptyList()
+    }
+    if (!state.isCacheReady) {
+      warmUp()
+      awaitReady(GET_MODULES_WAIT_MS)
     }
     return state.scopes[ProcessScope(processName, uid)] ?: emptyList()
   }

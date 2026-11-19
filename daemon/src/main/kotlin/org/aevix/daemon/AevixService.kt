@@ -51,8 +51,18 @@ object AevixService : IAevixDaemon.Stub() {
     appThread?.let { SystemContext.appThread = IApplicationThread.Stub.asInterface(it) }
     SystemContext.token = activityToken
 
-    // Initialize OS Observers using Coroutines for the dispatch blocks
-    registerReceivers()
+    // Registration is nine binder calls into this very system_server, made on a transaction that
+    // system_server is itself blocked in: it hands us its context and waits for the answer. Eight of
+    // the nine ask ActivityManagerService or the UID observer registry, both of which answer on a
+    // binder thread system_server has to find first. Doing that here therefore has a failure mode
+    // with no good ending -- a full binder pool turns the wait into the watchdog.
+    //
+    // Nothing reads one of these receivers during a fork, so the transaction does not have to
+    // finish before they exist. Off it goes.
+    AevixDaemon.scope.launch {
+      runCatching { registerReceivers() }
+          .onFailure { Log.e(TAG, "Failed to register the OS receivers", it) }
+    }
 
     if (AevixDaemon.startedAfterSystemServer) {
       Log.i(TAG, "Started after system_server. Forcing boot completed event.")

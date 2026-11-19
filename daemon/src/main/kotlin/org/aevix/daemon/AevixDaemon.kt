@@ -165,6 +165,17 @@ object AevixDaemon {
     // used to die here on an unreadable preference.
     val isVerboseLog = ManagerService.isVerboseLogEnabled()
 
+    // Build the module cache while this process still has root, and give it a bounded head start
+    // before the main thread drops to euid 1000 below. Everything that asks afterwards -- the
+    // binder call every fork makes, the manager's own queries -- then finds it already built
+    // instead of waiting for it, and a binder caller that does have to wait waits 200ms rather
+    // than a disk walk. Bounded because a build that hangs is no reason to keep system_server
+    // waiting on a daemon that never answers.
+    ConfigCache.warmUp()
+    if (!ConfigCache.awaitReady(1200L)) {
+      Log.w(TAG, "Module cache is not ready yet; continuing without it")
+    }
+
     // Setup IPC channel for applications by injecting DaemonService binder
     sendToBridge(AevixService.asBinder(), false)
 

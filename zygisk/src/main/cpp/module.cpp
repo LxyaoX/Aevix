@@ -204,9 +204,18 @@ void AevixModule::SetupEntryClass(JNIEnv *env) {
     }
 
     // Use the obfuscation map from the config to get the real class name.
+    //
+    // `find` rather than `at`: a map that arrived without this key -- a daemon whose build predates
+    // the entry, a reply large enough that the tail was dropped -- used to make `at` throw
+    // `std::out_of_range` out of a Zygisk callback, where nothing catches it. An uncaught C++
+    // exception out of this library is `std::terminate`, and in `system_server` that is a SIGABRT:
+    // a soft reboot caused by a missing string. Absent means not rewritten, so the plain name is
+    // the correct name to try.
     const auto &obfs_map = ConfigBridge::GetInstance()->obfuscation_map();
+    const auto entry_prefix = obfs_map.find("org.aevix.core.");
     std::string entry_class_name;
-    entry_class_name = obfs_map.at("org.aevix.core.") + "Main";
+    entry_class_name = (entry_prefix == obfs_map.end() ? std::string("org.aevix.core.")
+                                                       : entry_prefix->second) + "Main";
 
     // We must find the class through our custom ClassLoader.
     auto entry_class = this->FindClassFromLoader(env, inject_class_loader_, entry_class_name);

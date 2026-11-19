@@ -45,27 +45,31 @@ static TYPE_GET_STRINGS ResXMLParser_getStrings = nullptr;
 
 /**
  * @brief Constructs the class name for the XResources class at runtime.
+ *
+ * Deliberately not cached. It used to be, and the cached value was computed from whatever the
+ * obfuscation map held at the first call: registered natively before the map arrived, it went on
+ * answering the empty string for the life of the process, and every later `XResources` lookup
+ * failed against a name that could no longer change. The lookup is a map find and a concatenation
+ * on a path that runs once per process, so there is nothing to save.
+ *
+ * A missing entry means the prefix was not rewritten, which makes the plain name the right answer
+ * rather than a reason to return nothing.
  */
 static std::string GetXResourcesClassName() {
-    // Use a static local variable to ensure this lookup and string manipulation
-    // only happens once.
-    static std::string name = []() {
-        auto &obfs_map = ConfigBridge::GetInstance()->obfuscation_map();
-        if (obfs_map.empty()) {
-            LOGW("GetXResourcesClassName: obfuscation_map is empty.");
-        }
-        // The key is the original, unobfuscated class name prefix.
-        // The value is the new, obfuscated prefix.
-        auto it = obfs_map.find("android.content.res.XRes");
-        if (it == obfs_map.end()) {
-            LOGE("Could not find obfuscated name for XResources.");
-            return std::string();
-        }
-        std::string jni_name = it->second + "ources";
-        LOGD("Resolved XResources class name to: {}", jni_name.c_str());
-        return jni_name;
-    }();
-    return name;
+    auto &obfs_map = ConfigBridge::GetInstance()->obfuscation_map();
+    if (obfs_map.empty()) {
+        LOGW("GetXResourcesClassName: obfuscation_map is empty.");
+    }
+    // The key is the original, unobfuscated class name prefix.
+    // The value is the new, obfuscated prefix.
+    auto it = obfs_map.find("android.content.res.XRes");
+    if (it == obfs_map.end()) {
+        LOGE("Could not find obfuscated name for XResources; using the plain one.");
+        return std::string("android/content/res/XResources");
+    }
+    std::string jni_name = it->second + "ources";
+    LOGD("Resolved XResources class name to: {}", jni_name.c_str());
+    return jni_name;
 }
 
 /**

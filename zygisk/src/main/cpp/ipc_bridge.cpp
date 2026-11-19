@@ -582,9 +582,16 @@ void IPCBridge::HookBridge(JNIEnv *env) {
     }
 
     // Get framework-specific Java classes and methods ---
+    //
+    // `find` rather than `at`: see `SetupEntryClass`. This one runs inside `system_server` during
+    // its specialization, so an out_of_range here aborts the framework before it has started.
     const auto &obfs_map = ConfigBridge::GetInstance()->obfuscation_map();
+    const auto service_prefix = obfs_map.find("org.aevix.service.");
     std::string bridge_service_class_name;
-    bridge_service_class_name = obfs_map.at("org.aevix.service.") + "BridgeService";
+    bridge_service_class_name =
+        (service_prefix == obfs_map.end() ? std::string("org.aevix.service.")
+                                          : service_prefix->second) +
+        "BridgeService";
 
     auto bridge_class_ref =
         Context::GetInstance()->FindClassFromCurrentLoader(env, bridge_service_class_name);

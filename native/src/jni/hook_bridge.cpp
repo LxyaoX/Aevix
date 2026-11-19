@@ -179,8 +179,16 @@ const PrimitiveWrapper *WrapperOf(JNIEnv *env, jobject value) {
  */
 std::string PrettyName(JNIEnv *env, jclass cls) {
     static jclass cls_Class = (jclass)env->NewGlobalRef(env->FindClass("java/lang/Class"));
-    static auto *const get_type_name =
-        env->GetMethodID(cls_Class, "getTypeName", "()Ljava/lang/String;");
+    // Both are checked, because this function only runs on the way to throwing a refusal: a
+    // reflection table that failed to load here -- an OOM is enough -- would otherwise turn a
+    // diagnostic into a SIGSEGV in the process that was about to be told what went wrong.
+    static jmethodID get_type_name =
+        cls_Class == nullptr ? nullptr
+                             : env->GetMethodID(cls_Class, "getTypeName", "()Ljava/lang/String;");
+    if (cls == nullptr || get_type_name == nullptr) {
+        env->ExceptionClear();
+        return "?";
+    }
 
     // Only an allocation failure can fail either step, and the caller is on its way to throwing a
     // refusal that says more than an OutOfMemoryError would - so the pending one is cleared rather
@@ -515,19 +523,33 @@ AEVIX_DEF_NATIVE_METHOD(jobject, HookBridge, invokeOriginalMethod, jobject hookM
  */
 AEVIX_DEF_NATIVE_METHOD(jobject, HookBridge, allocateObject, jclass cls) {
     static jclass cls_Class = (jclass)env->NewGlobalRef(env->FindClass("java/lang/Class"));
-    static auto *const is_interface = env->GetMethodID(cls_Class, "isInterface", "()Z");
-    static auto *const is_array = env->GetMethodID(cls_Class, "isArray", "()Z");
-    static auto *const is_primitive = env->GetMethodID(cls_Class, "isPrimitive", "()Z");
-    static auto *const get_modifiers = env->GetMethodID(cls_Class, "getModifiers", "()I");
+    static jmethodID is_interface =
+        cls_Class == nullptr ? nullptr : env->GetMethodID(cls_Class, "isInterface", "()Z");
+    static jmethodID is_array =
+        cls_Class == nullptr ? nullptr : env->GetMethodID(cls_Class, "isArray", "()Z");
+    static jmethodID is_primitive =
+        cls_Class == nullptr ? nullptr : env->GetMethodID(cls_Class, "isPrimitive", "()Z");
+    static jmethodID get_modifiers =
+        cls_Class == nullptr ? nullptr : env->GetMethodID(cls_Class, "getModifiers", "()I");
     constexpr jint kAccAbstract = 0x0400;
 
-    if (cls == nullptr || env->CallBooleanMethod(cls, is_interface) == JNI_TRUE ||
-        env->CallBooleanMethod(cls, is_array) == JNI_TRUE ||
-        env->CallBooleanMethod(cls, is_primitive) == JNI_TRUE ||
-        (env->CallIntMethod(cls, get_modifiers) & kAccAbstract) != 0) {
+    // A missing method ID is the reflection table failing to load, and the safe answer there is
+    // still "refuse": running AllocObject on a class that is in fact uninstantiable is what
+    // CheckJNI aborts the process for, and the class came from a module.
+    bool refuses = cls == nullptr || is_interface == nullptr || is_array == nullptr ||
+                   is_primitive == nullptr || get_modifiers == nullptr;
+    if (!refuses) {
+        refuses = env->CallBooleanMethod(cls, is_interface) == JNI_TRUE ||
+                  env->CallBooleanMethod(cls, is_array) == JNI_TRUE ||
+                  env->CallBooleanMethod(cls, is_primitive) == JNI_TRUE ||
+                  (env->CallIntMethod(cls, get_modifiers) & kAccAbstract) != 0;
+    }
+    if (refuses) {
         jclass error = env->FindClass("java/lang/InstantiationException");
-        env->ThrowNew(error, "no instance of this class can be allocated");
-        env->DeleteLocalRef(error);
+        if (error != nullptr) {
+            env->ThrowNew(error, "no instance of this class can be allocated");
+            env->DeleteLocalRef(error);
+        }
         return nullptr;
     }
     return env->AllocObject(cls);

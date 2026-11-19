@@ -7,6 +7,10 @@ import android.os.IBinder.DeathRecipient
 import android.os.Parcel
 import hidden.HiddenApiBridge.Binder_allowBlocking
 import hidden.HiddenApiBridge.Context_getActivityToken
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import org.aevix.ipc.IAevixDaemon
 import org.aevix.util.Log
 
@@ -31,6 +35,26 @@ object BridgeService {
     @Volatile private var serviceBinder: IBinder? = null
 
     @Volatile private var service: IAevixDaemon? = null
+
+    /**
+     * Runs the hand-off to the daemon off the transaction's own thread.
+     *
+     * Every process on the device that is in scope asks for its binder here, and asks from its own
+     * fork, while `system_server` holds one of its binder threads for the answer. Answering means a
+     * synchronous binder call into the daemon, and the daemon was -- until its cache stopped being
+     * rebuilt on the calling thread -- able to spend hundreds of milliseconds on a disk walk before
+     * it replied. Sixteen of those at once is the whole pool, and a framework with no free binder
+     * thread is a framework the watchdog kills.
+     *
+     * Cached, so a daemon that stops answering costs threads rather than correctness: each waiter is
+     * abandoned after [ATTACH_TIMEOUT_MS] and its task finishes or does not, on its own.
+     */
+    private val attachCalls = Executors.newCachedThreadPool { runnable ->
+        Thread(runnable, "aevix-bridge-attach").apply { isDaemon = true }
+    }
+
+    /** How long `system_server` will hold a binder thread waiting for the daemon's answer. */
+    private const val ATTACH_TIMEOUT_MS = 2000L
 
     /** Cleans up service references if the remote Aevix daemon crashes. */
     private val serviceRecipient: DeathRecipient = DeathRecipient {
@@ -105,17 +129,49 @@ object BridgeService {
                 Action.GET_BINDER -> {
                     val processName = data.readString()
                     val heartBeat = data.readStrongBinder()
-                    val appService =
-                        service?.attachProcess(
-                            Binder.getCallingUid(),
-                            Binder.getCallingPid(),
-                            processName,
-                            heartBeat,
-                        )
+                    // Read here rather than inside the call below: these are the kernel's answer
+                    // about whoever sent this transaction, and a pooled thread has no transaction
+                    // of its own to be told about.
+                    val callerUid = Binder.getCallingUid()
+                    val callerPid = Binder.getCallingPid()
+                    val daemon = service
 
-                    if (appService != null && reply != null) {
+                    val appBinder: IBinder? =
+                        if (daemon == null || heartBeat == null) null
+                        else {
+                            // Bound outside the lambda: the AIDL parameter is non-null at the
+                            // Kotlin level, and a smart cast does not survive the capture.
+                            val heartbeat = heartBeat
+                            val pending =
+                                attachCalls.submit(
+                                    Callable {
+                                        runCatching {
+                                                daemon
+                                                    .attachProcess(
+                                                        callerUid, callerPid, processName, heartbeat
+                                                    )
+                                                    ?.asBinder()
+                                            }
+                                            .getOrNull()
+                                    })
+                            runCatching { pending.get(ATTACH_TIMEOUT_MS, TimeUnit.MILLISECONDS) }
+                                .onFailure {
+                                    if (it is TimeoutException) {
+                                        // Answering "no" costs this one process its modules.
+                                        // Not answering costs the framework its binder pool.
+                                        Log.w(
+                                            TAG,
+                                            "Daemon did not answer within ${ATTACH_TIMEOUT_MS}ms" +
+                                                " for $processName; starting it unhooked",
+                                        )
+                                    }
+                                }
+                                .getOrNull()
+                        }
+
+                    if (appBinder != null && reply != null) {
                         reply.writeNoException()
-                        reply.writeStrongBinder(appService.asBinder())
+                        reply.writeStrongBinder(appBinder)
                         true
                     } else false
                 }
