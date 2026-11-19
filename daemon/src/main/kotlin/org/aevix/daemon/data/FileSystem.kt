@@ -310,6 +310,17 @@ object FileSystem {
 
     val preLoadedApk = ModuleCode()
     val preLoadedDexes = mutableListOf<SharedMemory>()
+
+    // Every failure below hands back a ModuleLoad the caller cannot clean up from: a SharedMemory
+    // is a memfd plus a mapping, and this local list holds the only reference to them. Returning
+    // without closing leaks one descriptor and one mapping per DEX that had already been read -
+    // and a module that fails once fails on every process start, so those add up.
+    fun fail(reason: ModuleLoad): ModuleLoad {
+      preLoadedDexes.forEach { runCatching { it.close() } }
+      preLoadedDexes.clear()
+      return reason
+    }
+
     val moduleClassNames = mutableListOf<String>()
     val moduleLibraryNames = mutableListOf<String>()
     var isLegacy = false
@@ -379,12 +390,12 @@ object FileSystem {
               }
               "UNSUPPORTED" -> {
                 Log.w(TAG, "Module $apkPath uses API 100 which is no longer supported.")
-                return ModuleLoad.UnsupportedApi
+                return fail(ModuleLoad.UnsupportedApi)
               }
-              else -> return ModuleLoad.Unusable // No valid init files found
+              else -> return fail(ModuleLoad.Unusable) // No valid init files found
             }
 
-            if (moduleClassNames.isEmpty()) return ModuleLoad.Unusable
+            if (moduleClassNames.isEmpty()) return fail(ModuleLoad.Unusable)
 
             // Read DEX files
             var secondary = 1
@@ -400,7 +411,7 @@ object FileSystem {
         }
         .onFailure {
           Log.e(TAG, "Failed to load module $apkPath", it)
-          return ModuleLoad.Unusable
+          return fail(ModuleLoad.Unusable)
         }
 
     if (preLoadedDexes.isEmpty()) return ModuleLoad.Unusable

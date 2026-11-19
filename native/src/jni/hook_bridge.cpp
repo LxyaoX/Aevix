@@ -892,12 +892,42 @@ AEVIX_DEF_NATIVE_METHOD(jobjectArray, HookBridge, callbackSnapshot, jclass callb
     // Resolved once rather than on every call. This runs for every hit on a hooked method, and
     // `FindClass` is a lookup through the class loader; two of those plus a throwaway array, for a
     // snapshot that is usually a handful of entries long, was the most expensive part of it.
-    static jclass obj_class =
-        static_cast<jclass>(env->NewGlobalRef(env->FindClass("java/lang/Object")));
-    static jclass obj_array_class =
-        static_cast<jclass>(env->NewGlobalRef(env->FindClass("[Ljava/lang/Object;")));
+    //
+    // Both are checked before use. `FindClass` answers null with an exception pending when it
+    // cannot find the class, and `NewGlobalRef(null)` is null, not a reference - passing that to
+    // `NewObjectArray` as the element class is a crash rather than a failed snapshot. Neither name
+    // should ever miss, but "should never" is what turns into a SIGSEGV in a process nobody is
+    // watching.
+    static jclass obj_class = nullptr;
+    static jclass obj_array_class = nullptr;
+    if (obj_class == nullptr || obj_array_class == nullptr) {
+        jclass local_object = env->FindClass("java/lang/Object");
+        if (local_object == nullptr) {
+            env->ExceptionClear();
+            return nullptr;
+        }
+        jclass local_array = env->FindClass("[Ljava/lang/Object;");
+        if (local_array == nullptr) {
+            env->DeleteLocalRef(local_object);
+            env->ExceptionClear();
+            return nullptr;
+        }
+        // Published only after both succeeded, so a half-resolved pair is never visible.
+        obj_class = static_cast<jclass>(env->NewGlobalRef(local_object));
+        obj_array_class = static_cast<jclass>(env->NewGlobalRef(local_array));
+        env->DeleteLocalRef(local_object);
+        env->DeleteLocalRef(local_array);
+        if (obj_class == nullptr || obj_array_class == nullptr) {
+            env->ExceptionClear();
+            return nullptr;
+        }
+    }
 
     jobjectArray res = env->NewObjectArray(2, obj_array_class, nullptr);
+    if (res == nullptr) {
+        env->ExceptionClear();
+        return nullptr;
+    }
 
     // Create modern and legacy arrays
     // Use 'callback_class' (AevixHookRecord) for the modern array for strict type safety
@@ -905,6 +935,13 @@ AEVIX_DEF_NATIVE_METHOD(jobjectArray, HookBridge, callbackSnapshot, jclass callb
         env->NewObjectArray((jsize)hook_item->modern_callbacks.size(), callback_class, nullptr);
     jobjectArray legacy =
         env->NewObjectArray((jsize)hook_item->legacy_callbacks.size(), obj_class, nullptr);
+    if (modern == nullptr || legacy == nullptr) {
+        if (modern != nullptr) env->DeleteLocalRef(modern);
+        if (legacy != nullptr) env->DeleteLocalRef(legacy);
+        env->DeleteLocalRef(res);
+        env->ExceptionClear();
+        return nullptr;
+    }
 
     jsize i = 0;
     for (const auto &callback_pair : hook_item->modern_callbacks) {
