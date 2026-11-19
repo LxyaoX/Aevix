@@ -175,7 +175,11 @@ class AevixContext(
     override fun getModuleApplicationInfo(): ApplicationInfo = applicationInfo
 
     override fun getRemotePreferences(name: String): SharedPreferences {
-        return remotePrefs.getOrPut(name) { AevixRemotePreferences(service, name) }
+        // `computeIfAbsent` rather than `getOrPut`: the latter may run its lambda more than once
+        // under contention, and every `AevixRemotePreferences` built does a binder round trip in
+        // its constructor to register a callback. The instance that lost the race would be dropped
+        // with its listener still registered in the daemon.
+        return remotePrefs.computeIfAbsent(name) { AevixRemotePreferences(service, name) }
     }
 
     override fun listRemoteFiles(): Array<String> {
