@@ -73,25 +73,32 @@ class AevixModuleClassLoader : ByteBufferDexClassLoader {
             )
         }
 
-        findLoadedClass(name)?.let {
-            return it
-        }
+        // `ClassLoader.loadClass` takes this lock itself; an override replaces the whole method,
+        // so it has to take it here. Without it two threads resolving the same name both reach
+        // `findClass`, both define the class, and one of them comes back with
+        // `LinkageError: duplicate class definition` - which is not a ClassNotFoundException, so
+        // no caller is ready for it.
+        synchronized(getClassLoadingLock(name)) {
+            findLoadedClass(name)?.let {
+                return it
+            }
 
-        try {
-            return Any::class.java.classLoader!!.loadClass(name)
-        } catch (ignored: ClassNotFoundException) {}
+            try {
+                return Any::class.java.classLoader!!.loadClass(name)
+            } catch (ignored: ClassNotFoundException) {}
 
-        var fromSuper: ClassNotFoundException? = null
-        try {
-            return findClass(name)
-        } catch (ex: ClassNotFoundException) {
-            fromSuper = ex
-        }
+            var fromSuper: ClassNotFoundException? = null
+            try {
+                return findClass(name)
+            } catch (ex: ClassNotFoundException) {
+                fromSuper = ex
+            }
 
-        try {
-            return parent?.loadClass(name) ?: throw fromSuper
-        } catch (cnfe: ClassNotFoundException) {
-            throw fromSuper
+            try {
+                return parent?.loadClass(name) ?: throw fromSuper
+            } catch (cnfe: ClassNotFoundException) {
+                throw fromSuper
+            }
         }
     }
 
