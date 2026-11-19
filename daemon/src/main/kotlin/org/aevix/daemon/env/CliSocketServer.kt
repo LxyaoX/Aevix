@@ -41,6 +41,14 @@ object CliSocketServer {
         val address = LocalSocketAddress(cliSocketPath, LocalSocketAddress.Namespace.FILESYSTEM)
         rootSocket.bind(address)
 
+        // Owner only, explicitly. `bind` creates the node with the process umask applied, and the
+        // daemon runs as root where that is often 0 - a socket any app could connect to and drive
+        // the CLI's commands through. The token in the handshake is a compile-time UUID, which is
+        // not a secret: it sits in the daemon's BuildConfig and in the CLI binary, both readable.
+        // The file mode is the boundary that actually holds.
+        runCatching { Os.chmod(cliSocketPath, "600".toInt(8)) }
+            .onFailure { Log.w(TAG, "Could not restrict the CLI socket to its owner", it) }
+
         // LocalServerSocket(FileDescriptor) requires the FD to already be listening.
         Os.listen(rootSocket.fileDescriptor, 50)
         // Wrap the underlying FileDescriptor into a ServerSocket

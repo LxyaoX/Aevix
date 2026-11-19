@@ -62,7 +62,16 @@ public final class XposedBridge {
 
     public static volatile ClassLoader dummyClassLoader = null;
 
-    public static void initXResources() {
+    /**
+     * Prepares the resource hooks, once per process.
+     *
+     * Synchronized: the guard is a plain field read followed by a check, and everything between
+     * them — building the dummy class loader, then replacing this class's own parent with it — is
+     * not idempotent. Two threads arriving together would each build a loader and each write the
+     * parent field, and whichever wrote last would be the parent every class resolved afterwards;
+     * the other's loader, and every class already defined through it, would be orphaned.
+     */
+    public static synchronized void initXResources() {
         if (dummyClassLoader != null) {
             return;
         }
