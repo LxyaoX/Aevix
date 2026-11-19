@@ -139,9 +139,8 @@ object LoadedApkCreateAppFactoryHooker : XposedInterface.Hooker {
             chain.args.getOrNull(1) as? ClassLoader
                 ?: return chain.proceed() // Skip dispatch if there's no ClassLoader
 
-        // Only dispatch if on API 29+ per libxposed API specification
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            try {
+        // onPackageLoaded is part of the API from 29 on, which is below the floor here.
+        try {
                 val apkPackageName =
                     loadedApk.getFieldValue<String>("mPackageName") ?: appInfo.packageName
                 val ctx = PackageContextHelper.resolve(loadedApk, apkPackageName)
@@ -187,17 +186,15 @@ object LoadedApkCreateCLHooker : XposedInterface.Hooker {
             val ctx = PackageContextHelper.resolve(loadedApk, apkPackageName)
 
             // Dispatch Modern Lifecycle: onPackageReady
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                val appComponentFactory = loadedApk.getFieldValue<Any>("mAppComponentFactory")
-                AevixLifecycleManager.dispatchPackageReady(
-                    ctx.packageName,
-                    appInfo,
-                    ctx.isFirstPackage,
-                    defaultClassLoader,
-                    classLoader,
-                    appComponentFactory,
-                )
-            }
+            val appComponentFactory = loadedApk.getFieldValue<Any>("mAppComponentFactory")
+            AevixLifecycleManager.dispatchPackageReady(
+                ctx.packageName,
+                appInfo,
+                ctx.isFirstPackage,
+                defaultClassLoader,
+                classLoader,
+                appComponentFactory,
+            )
 
             // Legacy API: Only dispatch once during initial load
             if (isInitialLoad) {

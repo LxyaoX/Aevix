@@ -319,12 +319,9 @@ class FakeManagerService(
 /**
  * The write half of [versionCodeCompat], which exists only here.
  *
- * `setLongVersionCode` is API 28 and the app's minimum is 27, so below that the deprecated `int`
- * field is the field. Nothing in the real manager ever writes a version code -- only this fake,
- * which rewrites the daemon's answers to script the demo.
+ * Nothing in the real manager ever writes a version code -- only this fake, which rewrites the
+ * daemon's answers to script the demo.
  */
-@Suppress("DEPRECATION")
 private fun PackageInfo.setVersionCodeCompat(value: Long) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) longVersionCode = value
-    else versionCode = value.toInt()
+    longVersionCode = value
 }

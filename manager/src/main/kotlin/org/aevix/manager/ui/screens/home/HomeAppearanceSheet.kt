@@ -311,7 +311,8 @@ private fun ColorSection(
     onDynamic: (Boolean) -> Unit,
     onSeed: (Int) -> Unit,
 ) {
-    val supportsDynamic = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    // Dynamic colour has been available since 31, which is below the floor.
+    val supportsDynamic = true
     var wheelOpen by remember { mutableStateOf(false) }
     val custom = !dynamicColor && seed !in SeedScheme.PRESETS
 

@@ -57,26 +57,15 @@ object Dex2OatServer {
   /**
    * Watches [SELINUX_NODES] on every release this daemon runs on.
    *
-   * `FileObserver(List<File>, int)` is API 29 and the minimum here is 27, where the only
-   * constructors are the single-path ones -- deprecated in 29 precisely because they were replaced
-   * by these. So below 29 this is one observer per node, and `stopWatching` has to reach all of
-   * them, which is why the two live behind an object rather than being a `FileObserver` itself.
+   * One observer over the whole node list, which is what `FileObserver(List<File>, int)` is for.
+   * The per-node constructors that predate it are gone with the releases that needed them.
    */
   private object SelinuxObserver {
     private val observers: List<FileObserver> =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-          listOf(
-              object : FileObserver(SELINUX_NODES.map(::File), FileObserver.CLOSE_WRITE) {
-                override fun onEvent(event: Int, path: String?) = onSelinuxEvent()
-              })
-        } else {
-          SELINUX_NODES.map { node ->
-            @Suppress("DEPRECATION")
-            object : FileObserver(node, FileObserver.CLOSE_WRITE) {
+        listOf(
+            object : FileObserver(SELINUX_NODES.map(::File), FileObserver.CLOSE_WRITE) {
               override fun onEvent(event: Int, path: String?) = onSelinuxEvent()
-            }
-          }
-        }
+            })
 
     fun startWatching() = observers.forEach(FileObserver::startWatching)
 
@@ -122,18 +111,10 @@ object Dex2OatServer {
   }
 
   init {
-    // Android 10 vs 11+ path differences
-    if (Build.VERSION.SDK_INT == Build.VERSION_CODES.Q) {
-      checkAndAddDex2Oat("/apex/com.android.runtime/bin/dex2oat")
-      checkAndAddDex2Oat("/apex/com.android.runtime/bin/dex2oatd")
-      checkAndAddDex2Oat("/apex/com.android.runtime/bin/dex2oat64")
-      checkAndAddDex2Oat("/apex/com.android.runtime/bin/dex2oatd64")
-    } else {
-      checkAndAddDex2Oat("/apex/com.android.art/bin/dex2oat32")
-      checkAndAddDex2Oat("/apex/com.android.art/bin/dex2oatd32")
-      checkAndAddDex2Oat("/apex/com.android.art/bin/dex2oat64")
-      checkAndAddDex2Oat("/apex/com.android.art/bin/dex2oatd64")
-    }
+    checkAndAddDex2Oat("/apex/com.android.art/bin/dex2oat32")
+    checkAndAddDex2Oat("/apex/com.android.art/bin/dex2oatd32")
+    checkAndAddDex2Oat("/apex/com.android.art/bin/dex2oat64")
+    checkAndAddDex2Oat("/apex/com.android.art/bin/dex2oatd64")
 
     openDex2oat(4, "/data/adb/modules/zygisk_vector/bin/liboat_hook32.so")
     openDex2oat(5, "/data/adb/modules/zygisk_vector/bin/liboat_hook64.so")
@@ -271,9 +252,8 @@ object Dex2OatServer {
     SELinux.setFileContext(HOOKER64, xposedFile)
 
     runCatching {
-          // Closed by hand rather than with `use`: LocalServerSocket only implements Closeable
-          // from API 28, and this daemon runs from 27. The client socket below has implemented it
-          // since 17, so that one keeps `use`.
+          // Closed by hand rather than with `use`: LocalServerSocket does not implement Closeable,
+          // while the client socket below does and keeps `use`.
           val server = LocalServerSocket(sockPath)
           try {
             setSockCreateContext(null)

@@ -43,11 +43,7 @@ private fun IPackageManager.getPackageInfoCompatThrows(
     flags: Int,
     userId: Int
 ): PackageInfo? {
-  return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-    getPackageInfo(packageName, flags.toLong(), userId)
-  } else {
-    getPackageInfo(packageName, flags, userId)
-  }
+  return getPackageInfo(packageName, flags.toLong(), userId)
 }
 
 fun IPackageManager.getPackageInfoCompat(
@@ -168,12 +164,7 @@ fun IPackageManager.queryIntentActivitiesCompat(
     userId: Int
 ): List<ResolveInfo> {
   return runCatching {
-        val slice =
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-              queryIntentActivities(intent, resolvedType, flags.toLong(), userId)
-            } else {
-              queryIntentActivities(intent, resolvedType, flags, userId)
-            }
+        val slice = queryIntentActivities(intent, resolvedType, flags.toLong(), userId)
         slice?.list ?: emptyList()
       }
       .getOrElse {
@@ -184,15 +175,13 @@ fun IPackageManager.queryIntentActivitiesCompat(
 
 /** Cached method reference to avoid repeated reflection lookups in loops. */
 private val getInstalledPackagesMethod: Method? by lazy {
-  val isLongFlags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
   android.content.pm.IPackageManager::class
       .java
       .declaredMethods
       .find {
         it.name == "getInstalledPackages" &&
             it.parameterTypes.size == 2 &&
-            it.parameterTypes[0] ==
-                (if (isLongFlags) Long::class.javaPrimitiveType else Int::class.javaPrimitiveType)
+            it.parameterTypes[0] == Long::class.javaPrimitiveType
       }
       ?.apply { isAccessible = true }
 }
@@ -227,9 +216,8 @@ fun IPackageManager.getInstalledPackagesFromAllUsers(
   val users = userManager?.getRealUsers().orEmpty()
   if (users.isEmpty()) throw IllegalStateException("No users to enumerate packages for")
 
-  // Any, so the reflective invoke boxes it as Long or Int to match.
-  val flagParam: Any =
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) flags.toLong() else flags
+  // Any, so the reflective invoke boxes it as Long to match the parameter the method declares.
+  val flagParam: Any = flags.toLong()
 
   for (user in users) {
     // A user the platform will not answer for fails the whole call, as it did before the Kotlin
@@ -279,24 +267,16 @@ fun IActivityManager.registerReceiverCompat(
 ): Intent? {
   val appThread = SystemContext.appThread ?: return null
   return runCatching {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-          registerReceiverWithFeature(
-              appThread,
-              "android",
-              null,
-              "null",
-              receiver,
-              filter,
-              requiredPermission,
-              userId,
-              flags)
-        } else if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
-          registerReceiverWithFeature(
-              appThread, "android", null, receiver, filter, requiredPermission, userId, flags)
-        } else {
-          registerReceiver(
-              appThread, "android", receiver, filter, requiredPermission, userId, flags)
-        }
+        registerReceiverWithFeature(
+            appThread,
+            "android",
+            null,
+            "null",
+            receiver,
+            filter,
+            requiredPermission,
+            userId,
+            flags)
       }
       .onFailure { Log.e(TAG, "registerReceiver failed", it) }
       .getOrNull()
@@ -305,58 +285,43 @@ fun IActivityManager.registerReceiverCompat(
 fun IActivityManager.broadcastIntentCompat(intent: Intent) {
   val appThread = SystemContext.appThread
   runCatching {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-          broadcastIntentWithFeature(
-              appThread,
-              null,
-              intent,
-              null,
-              null,
-              0,
-              null,
-              null,
-              null,
-              null,
-              null,
-              -1,
-              null,
-              true,
-              false,
-              0)
-        } else if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
-          broadcastIntentWithFeature(
-              appThread, null, intent, null, null, 0, null, null, null, -1, null, true, false, 0)
-        } else {
-          broadcastIntent(
-              appThread, intent, null, null, 0, null, null, null, -1, null, true, false, 0)
-        }
+        broadcastIntentWithFeature(
+            appThread,
+            null,
+            intent,
+            null,
+            null,
+            0,
+            null,
+            null,
+            null,
+            null,
+            null,
+            -1,
+            null,
+            true,
+            false,
+            0)
       }
       .onFailure { Log.e(TAG, "broadcastIntent failed", it) }
 }
 
-// `startActivityAsUserWithFeature` only arrived in Android R: on older platforms the same call
-// exists without the calling feature id, and using the newer one throws `NoSuchMethodError`.
 fun IActivityManager.startActivityAsUserCompat(intent: Intent, userId: Int): Int {
   val appThread = SystemContext.appThread
   return runCatching {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-          startActivityAsUserWithFeature(
-              appThread,
-              "android",
-              null,
-              intent,
-              intent.type,
-              null,
-              null,
-              0,
-              0,
-              null,
-              null,
-              userId)
-        } else {
-          startActivityAsUser(
-              appThread, "android", intent, intent.type, null, null, 0, 0, null, null, userId)
-        }
+        startActivityAsUserWithFeature(
+            appThread,
+            "android",
+            null,
+            intent,
+            intent.type,
+            null,
+            null,
+            0,
+            0,
+            null,
+            null,
+            userId)
       }
       .onFailure { Log.e(TAG, "startActivityAsUser failed", it) }
       .getOrDefault(-1)

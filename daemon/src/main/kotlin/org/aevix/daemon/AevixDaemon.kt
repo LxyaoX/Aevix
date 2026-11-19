@@ -133,10 +133,8 @@ object AevixDaemon {
         .onFailure { Log.e(TAG, "Logcat monitor failed to initialise", it) }
     runCatching { if (BuildConfig.DEBUG) LogcatMonitor.start() }
         .onFailure { Log.e(TAG, "Logcat reader failed to start", it) }
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-      runCatching { Dex2OatServer.start() }
-          .onFailure { Log.e(TAG, "dex2oat server failed to start", it) }
-    }
+    runCatching { Dex2OatServer.start() }
+        .onFailure { Log.e(TAG, "dex2oat server failed to start", it) }
     runCatching { CliSocketServer.start() }
         .onFailure { Log.e(TAG, "CLI socket failed to start", it) }
 

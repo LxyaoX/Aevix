@@ -99,16 +99,12 @@ object AevixStartup {
                 }
                 .onFailure { Utils.logE("Hooks on LoadedApk constructors failed", it) }
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                runCatching {
-                        loadedApkClass.declaredMethods
-                            .filter { it.name == "createAppFactory" }
-                            .forEach {
-                                AevixHookBuilder(it).intercept(LoadedApkCreateAppFactoryHooker)
-                            }
-                    }
-                    .onFailure { Utils.logE("Hooks on LoadedApk.createAppFactory failed", it) }
-            }
+            runCatching {
+                    loadedApkClass.declaredMethods
+                        .filter { it.name == "createAppFactory" }
+                        .forEach { AevixHookBuilder(it).intercept(LoadedApkCreateAppFactoryHooker) }
+                }
+                .onFailure { Utils.logE("Hooks on LoadedApk.createAppFactory failed", it) }
 
             runCatching {
                     loadedApkClass.declaredMethods

@@ -43,18 +43,6 @@ class AevixModuleClassLoader : ByteBufferDexClassLoader {
         initNativeDirs(librarySearchPath)
     }
 
-    private constructor(
-        dexBuffers: Array<ByteBuffer>,
-        parent: ClassLoader?,
-        apkPath: String,
-        librarySearchPath: String?,
-        blockLegacyApi: Boolean,
-    ) : super(dexBuffers, parent) {
-        this.apkPath = apkPath
-        this.blockLegacyApi = blockLegacyApi
-        initNativeDirs(librarySearchPath)
-    }
-
     private fun initNativeDirs(librarySearchPath: String?) {
         val searchPath = librarySearchPath ?: ""
         nativeLibraryDirs.addAll(splitPaths(searchPath))
@@ -211,23 +199,13 @@ class AevixModuleClassLoader : ByteBufferDexClassLoader {
                     .toTypedArray()
 
             val cl =
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    AevixModuleClassLoader(
-                        dexBuffers,
-                        librarySearchPath,
-                        parent,
-                        apk,
-                        blockLegacyApi,
-                    )
-                } else {
-                    AevixModuleClassLoader(
-                        dexBuffers,
-                        parent,
-                        apk,
-                        librarySearchPath,
-                        blockLegacyApi,
-                    )
-                }
+                AevixModuleClassLoader(
+                    dexBuffers,
+                    librarySearchPath,
+                    parent,
+                    apk,
+                    blockLegacyApi,
+                )
 
             dexBuffers.toList().parallelStream().forEach { SharedMemory.unmap(it) }
             dexes.parallelStream().forEach { it.close() }

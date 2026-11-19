@@ -32,9 +32,9 @@ fun AevixTheme(content: @Composable () -> Unit) {
         }
 
     val context = LocalContext.current
-    // Dynamic colour is this app's default; the seed below applies before Android 12, or whenever
-    // the user would rather choose the colour themselves than inherit their wallpaper's.
-    val dynamic = dynamicRequested && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    // Dynamic colour is this app's default; the seed below applies when the user would rather
+    // choose the colour themselves than inherit their wallpaper's.
+    val dynamic = dynamicRequested
 
     var scheme =
         when {

@@ -239,7 +239,9 @@ val injectedPackageUid = 2000
 val defaultManagerPackageName = "org.aevix.manager"
 
 val androidTargetSdkVersion = 37
-val androidMinSdkVersion = 27
+// Android 14 (API 34). Everything below it was carried as a branch in about sixty places and no
+// part of the framework had been exercised on it in a long time; the branches are gone with it.
+val androidMinSdkVersion = 34
 val androidBuildToolsVersion = "37.0.0"
 val androidCompileSdkVersion = 37
 val androidCompileNdkVersion = "30.0.16248370"

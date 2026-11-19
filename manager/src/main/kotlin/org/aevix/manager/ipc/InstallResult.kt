@@ -24,9 +24,9 @@ import org.aevix.manager.logW
  * ignored; a caller of the framework API gets no such help. Under the host the manager *is* that
  * uid, so `PackageManagerService` treats a module the device already has as a first install and
  * fails it with `INSTALL_FAILED_ALREADY_EXISTS: Attempt to re-install <package> without first
- * uninstalling`. That branch reads the same from API 27, this app's minimum, to AOSP main, so
- * updating a module through the store has never worked parasitically on any release, and neither
- * has updating an installed manager from the host.
+ * uninstalling`. That branch reads the same across every release this app supports, so updating a
+ * module through the store has never worked parasitically, and neither has updating an installed
+ * manager from the host.
  *
  * Standalone this changes nothing, because the platform has already set the flag by the time a
  * session exists — which is why failing to set it is worth no more than a warning. The field is
@@ -50,15 +50,12 @@ fun PackageInstaller.SessionParams.requestReplaceExisting() {
  * real status follows their answer. [onPrompt] is the caller's chance to say so on screen, and
  * [promptFailure] is what to log if the prompt cannot be started.
  *
- * **The UUID in the action is what keeps the verdict ours, and below API 33 nothing else can.** A
- * registered receiver has no exported flag before then, so anything installed can broadcast to one
- * whose action it knows. `ContextCompat.registerReceiver` only appears to answer that: below 33 it
- * stands in for the missing flag by demanding `<package>.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`
- * of this process — a signature permission declared by a manifest that parasitically was never
- * installed, looked up under the host's package name — so it threw instead of registering, and
- * every install on API 27..32 failed before it began. Requiring a permission of the *sender* is no
- * better: a `PendingIntent` broadcast is sent as whoever created it, so that is this process, and
- * no permission is held both under the host and standalone.
+ * **The UUID in the action is what keeps the verdict ours.** `RECEIVER_NOT_EXPORTED` is available
+ * and used here, so the action is no longer the only barrier — but a broadcast that names its
+ * package can still be delivered to the receiver by anything that can guess the action, and the
+ * UUID is what makes guessing useless. Requiring a permission of the *sender* would not work: a
+ * `PendingIntent` broadcast is sent as whoever created it, so that is this process, and no
+ * permission is held both under the host and standalone.
  *
  * A forged verdict is worth ruling out rather than merely tidy. A fake `STATUS_SUCCESS` reports an
  * install that never happened and skips the caller's `abandonSession`; a fake
@@ -104,16 +101,10 @@ suspend fun Context.commitForResult(
             }
         }
 
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        registerReceiver(receiver, IntentFilter(action), Context.RECEIVER_NOT_EXPORTED)
-    } else {
-        registerReceiver(receiver, IntentFilter(action))
-    }
+    registerReceiver(receiver, IntentFilter(action), Context.RECEIVER_NOT_EXPORTED)
     continuation.invokeOnCancellation { runCatching { unregisterReceiver(receiver) } }
 
-    val flags =
-        PendingIntent.FLAG_UPDATE_CURRENT or
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
+    val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
     // The package restriction names the host parasitically, and has to: the receiver belongs to
     // this process, so a broadcast confined to the manager's own package would reach nobody.
     val pending =

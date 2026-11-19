@@ -128,6 +128,13 @@ case "$ARCH" in
 esac
 ui_print "- Device platform: $ARCH ($ABI)"
 
+# Android 14 (API 34) is the floor. Nothing below it is built, tested or branched for: the
+# framework is compiled against 34 and every path that used to exist for 8.1 through 13 is gone,
+# so an older device would get a module that installs and then does not work.
+if [ "$API" -lt 34 ]; then
+    abort "! Unsupported Android version: API $API (Android 14 / API 34 or newer is required)"
+fi
+
 ui_print "- Extracting root module files"
 for file in module.prop action.sh service.sh uninstall.sh sepolicy.rule cli daemon; do
     extract "$ZIPFILE" "$file" "$MODPATH"
@@ -143,23 +150,22 @@ mkdir -p "$MODPATH/zygisk"
 
 extract_xz "lib/$ABI/libzygisk.so" "$MODPATH/zygisk" "${ABI}.so"
 
-if [ "$API" -ge 29 ]; then
-    ui_print "- Extracting dex2oat binaries"
-    mkdir -p "$MODPATH/bin"
+ui_print "- Extracting dex2oat binaries"
+mkdir -p "$MODPATH/bin"
 
-    # The daemon resolves these two by name, so the 64 suffix stays even now that there is
-    # nothing to tell them apart from.
-    extract_xz "bin/$ABI/dex2oat" "$MODPATH/bin" "dex2oat64"
-    extract_xz "bin/$ABI/liboat_hook.so" "$MODPATH/bin" "liboat_hook64.so"
+# The daemon resolves these two by name, so the 64 suffix stays even now that there is nothing to
+# tell them apart from.
+extract_xz "bin/$ABI/dex2oat" "$MODPATH/bin" "dex2oat64"
+extract_xz "bin/$ABI/liboat_hook.so" "$MODPATH/bin" "liboat_hook64.so"
 
-    ui_print "- Patching binaries for anti-detection"
-    DEV_PATH=$(tr -dc 'a-z0-9' </dev/urandom | head -c 32)
-    # Patch only if the file successfully exists
-    [ -f "$MODPATH/daemon.apk" ] && sed -i "s/5291374ceda0aef7c5d86cd2a4f6a3ac/$DEV_PATH/g" "$MODPATH/daemon.apk"
-    [ -f "$MODPATH/bin/dex2oat64" ] && sed -i "s/5291374ceda0aef7c5d86cd2a4f6a3ac/$DEV_PATH/" "$MODPATH/bin/dex2oat64"
-else
-    extract "$ZIPFILE" 'system.prop' "$MODPATH"
-fi
+# system.prop is not version gated: ro.maple.enable is appended to it below whatever the API is.
+extract "$ZIPFILE" 'system.prop' "$MODPATH"
+
+ui_print "- Patching binaries for anti-detection"
+DEV_PATH=$(tr -dc 'a-z0-9' </dev/urandom | head -c 32)
+# Patch only if the file successfully exists
+[ -f "$MODPATH/daemon.apk" ] && sed -i "s/5291374ceda0aef7c5d86cd2a4f6a3ac/$DEV_PATH/g" "$MODPATH/daemon.apk"
+[ -f "$MODPATH/bin/dex2oat64" ] && sed -i "s/5291374ceda0aef7c5d86cd2a4f6a3ac/$DEV_PATH/" "$MODPATH/bin/dex2oat64"
 
 ui_print "- Setting permissions"
 set_perm_recursive "$MODPATH" 0 0 0755 0644

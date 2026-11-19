@@ -368,17 +368,9 @@ class ModuleAppService(private val loadedModule: LoadedModule) : IXposedService.
     // nothing to link, which is why the old leak was permanent rather than merely long.
     val token = Binder()
     return runCatching {
-          // The tag argument arrived in Q, replacing the three-argument form rather than
-          // overloading it, so each side of that line is a NoSuchMethodError on the other. The
-          // branch was in the Java daemon and was lost in the Kotlin rewrite (#597), which means
-          // no modern module has been handed its service on 8.1 or 9 since — swallowed, because
-          // the error lands in the runCatching below and reads as an ordinary failed delivery.
           val provider =
-              if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                activityManager?.getContentProviderExternal(authority, userId, token, "vector")
-              } else {
-                activityManager?.getContentProviderExternal(authority, userId, token)
-              }?.provider
+              activityManager?.getContentProviderExternal(authority, userId, token, "vector")
+                  ?.provider
 
           if (provider == null) {
             Log.d(TAG, "No service provider for $name")
@@ -387,20 +379,12 @@ class ModuleAppService(private val loadedModule: LoadedModule) : IXposedService.
 
           val extra = Bundle().apply { putBinder("binder", asBinder()) }
           val reply: Bundle? =
-              if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                provider.call(
-                    AttributionSource.Builder(1000).setPackageName("android").build(),
-                    authority,
-                    SEND_BINDER,
-                    null,
-                    extra)
-              } else if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
-                provider.call("android", null, authority, SEND_BINDER, null, extra)
-              } else if (Build.VERSION.SDK_INT == Build.VERSION_CODES.Q) {
-                provider.call("android", authority, SEND_BINDER, null, extra)
-              } else {
-                provider.call("android", SEND_BINDER, null, extra)
-              }
+              provider.call(
+                  AttributionSource.Builder(1000).setPackageName("android").build(),
+                  authority,
+                  SEND_BINDER,
+                  null,
+                  extra)
 
           if (reply != null) {
             Log.d(TAG, "Sent module binder to $name")
@@ -430,25 +414,11 @@ class ModuleAppService(private val loadedModule: LoadedModule) : IXposedService.
   /**
    * Gives back the reference [sendBinder] took, whatever became of the call in between.
    *
-   * The user id has to be named, and can be from Q. The plain form is all that API 27 and 28 have,
-   * and there the platform resolves the name against the *caller's* user, which is the daemon's:
-   * a reference taken for a module in a secondary user cannot be given back at all, and asking
-   * anyway would decrement the token-less counter of whatever record user 0 has under that name.
-   * So on those two releases a secondary user's reference is left to the token instead — the
-   * platform links the handle to the token's death, so the reference goes when the daemon does.
+   * The user id has to be named. Without it the platform resolves the name against the *caller's*
+   * user, which is the daemon's:
    */
   private fun releaseProvider(authority: String, token: Binder, userId: Int) {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q && userId != 0) {
-      Log.d(TAG, "Cannot release the reference for $authority in user $userId before Q")
-      return
-    }
-    runCatching {
-          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            activityManager?.removeContentProviderExternalAsUser(authority, token, userId)
-          } else {
-            activityManager?.removeContentProviderExternal(authority, token)
-          }
-        }
+    runCatching { activityManager?.removeContentProviderExternalAsUser(authority, token, userId) }
         .onFailure { Log.w(TAG, "Failed to release the provider reference for $authority", it) }
   }
 

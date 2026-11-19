@@ -32,8 +32,8 @@ class Database(context: Context? = FakeContext()) :
             enabled BOOLEAN DEFAULT 0 CHECK (enabled IN (0, 1)),
             -- Dead since v5, read by nothing: `include new apps` is per user now and lives in
             -- the table below, which this column cannot be -- one row per package is one answer
-            -- for every user at once. Kept because SQLite gained DROP COLUMN in 3.35 and this
-            -- supports API 27, so removing it means rebuilding the table.
+            -- for every user at once. Kept because removing it means rebuilding the table, and a
+            -- column nothing reads costs less than a migration.
             auto_include BOOLEAN DEFAULT 0 CHECK (auto_include IN (0, 1))
         );
         """

@@ -85,27 +85,15 @@ fun applyXspaceWorkaround(connection: IServiceConnection) {
               ComponentName.unflattenFromString(
                   "com.miui.securitycore/com.miui.xspace.service.XSpaceService")
         }
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-      activityManager?.bindService(
-          SystemContext.appThread,
-          SystemContext.token,
-          intent,
-          intent.type,
-          connection,
-          Context.BIND_AUTO_CREATE.toLong(),
-          "android",
-          0)
-    } else {
-      activityManager?.bindService(
-          SystemContext.appThread,
-          SystemContext.token,
-          intent,
-          intent.type,
-          connection,
-          Context.BIND_AUTO_CREATE,
-          "android",
-          0)
-    }
+    activityManager?.bindService(
+        SystemContext.appThread,
+        SystemContext.token,
+        intent,
+        intent.type,
+        connection,
+        Context.BIND_AUTO_CREATE.toLong(),
+        "android",
+        0)
   }
 }
 
@@ -124,24 +112,23 @@ fun applySqliteHelperWorkaround() {
       }
       .onFailure { Log.v(TAG, "SQLiteGlobal workaround not applied: ${it.message}") }
 
-  // Fix AOSP Settings.Global dependency (API 28+ but not recent Android versions)
-  if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-    runCatching {
-          val walClass = Class.forName("android.database.sqlite.SQLiteCompatibilityWalFlags")
+  // Fix AOSP Settings.Global dependency. The class is present but its flags can be unset, so this
+  // stays a probe rather than a version test.
+  runCatching {
+        val walClass = Class.forName("android.database.sqlite.SQLiteCompatibilityWalFlags")
 
-          // Mark as initialized so initIfNeeded() returns immediately
-          walClass.getDeclaredField("sInitialized").apply {
-            isAccessible = true
-            set(null, true)
-          }
-
-          // Mark as 'Currently Calling' as a secondary recursion guard
-          walClass.getDeclaredField("sCallingGlobalSettings").apply {
-            isAccessible = true
-            set(null, true)
-          }
-          Log.i(TAG, "SQLiteCompatibilityWalFlags successfully bypassed.")
+        // Mark as initialized so initIfNeeded() returns immediately
+        walClass.getDeclaredField("sInitialized").apply {
+          isAccessible = true
+          set(null, true)
         }
-        .onFailure { Log.v(TAG, "Could not disable SQLiteCompatibilityWalFlags: ${it.message}") }
-  }
+
+        // Mark as 'Currently Calling' as a secondary recursion guard
+        walClass.getDeclaredField("sCallingGlobalSettings").apply {
+          isAccessible = true
+          set(null, true)
+        }
+        Log.i(TAG, "SQLiteCompatibilityWalFlags successfully bypassed.")
+      }
+      .onFailure { Log.v(TAG, "Could not disable SQLiteCompatibilityWalFlags: ${it.message}") }
 }

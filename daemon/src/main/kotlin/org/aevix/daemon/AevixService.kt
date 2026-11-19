@@ -37,14 +37,9 @@ object AevixService : IAevixDaemon.Stub() {
    * What the dialer broadcasts when a secret code is entered, which changed name in Q.
    *
    * The pre-Q action is spelled out rather than taken from `Telephony.Sms.Intents`, whose constant
-   * only became public API in 28 while this daemon runs from 27. It is the same string either way:
-   * on 8.1 the platform broadcast it from the hidden `TelephonyIntents.SECRET_CODE_ACTION`, which
-   * carries exactly this value, and the public constant that followed was deprecated in 29 when
-   * `TelephonyManager.ACTION_SECRET_CODE` replaced it.
+   * `TelephonyManager.ACTION_SECRET_CODE` is public from API 29 and this daemon runs from 34.
    */
-  private val ACTION_SECRET_CODE =
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) TelephonyManager.ACTION_SECRET_CODE
-      else "android.provider.Telephony.SECRET_CODE"
+  private val ACTION_SECRET_CODE = TelephonyManager.ACTION_SECRET_CODE
 
   /** Dial *#*#23849#*#* ("AEVIX" on the keypad) to open the manager. */
   private const val SECRET_CODE = "23849"
@@ -117,13 +112,8 @@ object AevixService : IAevixDaemon.Stub() {
           if (!ordered && intent.action != Intent.ACTION_LOCKED_BOOT_COMPLETED) return
           runCatching {
                 val appThread = SystemContext.appThread
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                  activityManager?.finishReceiver(
-                      appThread?.asBinder(), resultCode, data, extras, false, intent.flags)
-                } else {
-                  activityManager?.finishReceiver(
-                      this, resultCode, data, extras, false, intent.flags)
-                }
+                activityManager?.finishReceiver(
+                    appThread?.asBinder(), resultCode, data, extras, false, intent.flags)
               }
               .onFailure { Log.e(TAG, "finishReceiver failed", it) }
         }

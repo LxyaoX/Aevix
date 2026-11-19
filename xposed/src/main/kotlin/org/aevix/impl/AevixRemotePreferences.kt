@@ -13,11 +13,7 @@ import org.aevix.util.Log
 
 @Suppress("DEPRECATION", "UNCHECKED_CAST")
 private inline fun <reified T> Bundle.getSerializableCompat(key: String): T? {
-    return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-        getSerializable(key, java.io.Serializable::class.java) as? T
-    } else {
-        getSerializable(key) as? T
-    }
+    return getSerializable(key, java.io.Serializable::class.java) as? T
 }
 
 @Suppress("UNCHECKED_CAST")

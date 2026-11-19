@@ -22,7 +22,8 @@ The framework allows modules to modify system and application behavior in-memory
 
 ### Compatibility
 
-Aevix supports devices running **Android 8.1 through Android 17 Beta**.
+Aevix supports devices running **Android 14 through Android 17 Beta**. Android 13 and below are
+not supported: the framework targets API 34 and refuses to install on anything older.
 
 > [!TIP]
 > This framework requires a recent installation of Magisk or KernelSU with Zygisk enabled.

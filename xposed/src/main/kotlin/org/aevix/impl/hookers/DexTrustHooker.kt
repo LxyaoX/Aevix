@@ -28,10 +28,6 @@ object DexTrustHooker : XposedInterface.Hooker {
                     break
                 }
             }
-            if (Build.VERSION.SDK_INT == Build.VERSION_CODES.P && classLoader == null) {
-                classLoader = DexTrustHooker::class.java.classLoader
-            }
-
             while (classLoader != null) {
                 if (classLoader === DexTrustHooker::class.java.classLoader) {
                     // Inform the native bridge that this DEX cookie is safe

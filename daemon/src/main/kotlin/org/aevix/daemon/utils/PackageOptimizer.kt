@@ -22,10 +22,7 @@ object PackageOptimizer {
 
   private const val TAG = "AevixOptimizer"
 
-  private val backend: Backend =
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
-          FallbackBackend(primary = ShellBackend, fallback = BinderBackend)
-      else BinderBackend
+  private val backend: Backend = FallbackBackend(primary = ShellBackend, fallback = BinderBackend)
 
   /**
    * Re-optimizes [packageName]: clears its profiles, then forces a profile-guided recompile.

@@ -69,7 +69,7 @@ object AevixLifecycleManager {
         appComponentFactory: Any?, // Abstracted for API compatibility
     ) {
         val param =
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && appComponentFactory != null) {
+            if (appComponentFactory != null) {
                 PackageReadyParamImplP(
                     packageName,
                     appInfo,
@@ -79,7 +79,7 @@ object AevixLifecycleManager {
                     appComponentFactory,
                 )
             } else {
-                // Fallback for API < 28 (or if factory is null).
+                // The factory is null when the platform did not create one for this package.
                 object : PackageReadyParam {
                     override fun getPackageName() = packageName
 

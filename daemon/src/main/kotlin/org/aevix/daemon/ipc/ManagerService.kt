@@ -362,21 +362,16 @@ object ManagerService : IManagerService.Stub() {
   /**
    * Puts a package an existing user already holds into another user.
    *
-   * Android 10 grew a fifth parameter, the permissions to allowlist, and this runs on 8.1 too.
-   * `null` there is what `pm install-existing` passes: allowlist nothing extra, not grant nothing.
+   * The fifth parameter is the permissions to allowlist. `null` is what `pm install-existing`
+   * passes: allowlist nothing extra, not grant nothing.
    */
   override fun installExistingPackageAsUser(packageName: String, userId: Int): Boolean {
     requireManager()
     val pm = packageManager ?: return false
     return runCatching {
           val status =
-              if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                pm.installExistingPackageAsUser(
-                    packageName, userId, 0, PackageManager.INSTALL_REASON_USER, null)
-              } else {
-                pm.installExistingPackageAsUser(
-                    packageName, userId, 0, PackageManager.INSTALL_REASON_USER)
-              }
+              pm.installExistingPackageAsUser(
+                  packageName, userId, 0, PackageManager.INSTALL_REASON_USER, null)
           // Reporting an unnamed code as success would leave the manager claiming a module is
           // in a profile that never received it.
           if (status != INSTALL_SUCCEEDED) {
@@ -633,8 +628,7 @@ object ManagerService : IManagerService.Stub() {
     return PackageOptimizer.optimize(packageName)
   }
 
-  override fun getDex2OatWrapperState() =
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) Dex2OatServer.compatibility else 0
+  override fun getDex2OatWrapperState() = Dex2OatServer.compatibility
 
   override fun setIncludeNewApps(packageName: String, userId: Int, enabled: Boolean) =
       ModuleDatabase.setIncludeNewApps(packageName, userId, enabled)

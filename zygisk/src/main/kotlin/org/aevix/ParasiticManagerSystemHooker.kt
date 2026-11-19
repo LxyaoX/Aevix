@@ -123,85 +123,47 @@ class ParasiticManagerSystemHooker : HandleSystemServerProcessHooker.Callback {
     }
 
     private fun hookSplashScreenSuppression(classLoader: ClassLoader) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            // ---------------------------------------------------------
-            // Android 12+ (API 31+) - StartingSurfaceController
-            // ---------------------------------------------------------
-            runCatching {
-                    val controllerClass =
-                        Class.forName(
-                            "com.android.server.wm.StartingSurfaceController",
-                            false,
-                            classLoader,
-                        )
-                    val createMethod =
-                        controllerClass.declaredMethods.first {
-                            it.name == "createSplashScreenStartingSurface"
-                        }
-
-                    val activityRecordClass =
-                        Class.forName("com.android.server.wm.ActivityRecord", false, classLoader)
-
-                    // Cache the field to avoid overhead during hook execution
-                    val infoField: Field =
-                        activityRecordClass.getDeclaredField("info").apply { isAccessible = true }
-
-                    AevixHookBuilder(createMethod).intercept { chain ->
-                        // Both reads are guarded: this runs on the window manager's own thread for
-                        // every activity start, and a throw here would be answered by the
-                        // protective mode replaying the original - which is the right outcome, but
-                        // only after the exception has crossed a path that measures its own
-                        // latency. An unknown shape simply means "not ours".
-                        val activityRecord = chain.args.firstOrNull()
-                        val info =
-                            if (activityRecord == null) null
-                            else runCatching { infoField.get(activityRecord) as? ActivityInfo }
-                                .getOrNull()
-
-                        if (info?.processName == BuildConfig.ManagerPackageName) {
-                            Utils.logD("Suppressing Android 12+ Splash Screen for Aevix Manager.")
-                            return@intercept null
-                        }
-                        chain.proceed()
+        // StartingSurfaceController is where the splash surface is created from API 31 on, and 31
+        // is below the floor here. The ActivityRecord.showStartingWindow path that predates it is
+        // gone with the releases it served.
+        runCatching {
+                val controllerClass =
+                    Class.forName(
+                        "com.android.server.wm.StartingSurfaceController",
+                        false,
+                        classLoader,
+                    )
+                val createMethod =
+                    controllerClass.declaredMethods.first {
+                        it.name == "createSplashScreenStartingSurface"
                     }
-                }
-                .onFailure { Utils.logE("Failed to hook StartingSurfaceController", it) }
-        } else {
-            // ---------------------------------------------------------
-            // Android 8.1 - 11 (API 27 - 30) - ActivityRecord
-            // ---------------------------------------------------------
-            runCatching {
-                    val recordClassName =
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                            "com.android.server.wm.ActivityRecord" // API 29-30
-                        } else {
-                            "com.android.server.am.ActivityRecord" // API 27-28
-                        }
 
-                    val recordClass = Class.forName(recordClassName, false, classLoader)
-                    val showMethod =
-                        recordClass.declaredMethods.first { it.name == "showStartingWindow" }
+                val activityRecordClass =
+                    Class.forName("com.android.server.wm.ActivityRecord", false, classLoader)
 
-                    // Cache the field
-                    val infoField: Field =
-                        recordClass.getDeclaredField("info").apply { isAccessible = true }
+                // Cache the field to avoid overhead during hook execution
+                val infoField: Field =
+                    activityRecordClass.getDeclaredField("info").apply { isAccessible = true }
 
-                    AevixHookBuilder(showMethod).intercept { chain ->
-                        // Same guard as the API 31+ branch above.
-                        val activityRecord = chain.thisObject
-                        val info =
-                            if (activityRecord == null) null
-                            else runCatching { infoField.get(activityRecord) as? ActivityInfo }
-                                .getOrNull()
+                AevixHookBuilder(createMethod).intercept { chain ->
+                    // Both reads are guarded: this runs on the window manager's own thread for
+                    // every activity start, and a throw here would be answered by the protective
+                    // mode replaying the original - which is the right outcome, but only after the
+                    // exception has crossed a path that measures its own latency. An unknown shape
+                    // simply means "not ours".
+                    val activityRecord = chain.args.firstOrNull()
+                    val info =
+                        if (activityRecord == null) null
+                        else runCatching { infoField.get(activityRecord) as? ActivityInfo }
+                            .getOrNull()
 
-                        if (info?.processName == BuildConfig.ManagerPackageName) {
-                            Utils.logD("Suppressing Legacy Starting Window for Aevix Manager.")
-                            return@intercept null
-                        }
-                        chain.proceed()
+                    if (info?.processName == BuildConfig.ManagerPackageName) {
+                        Utils.logD("Suppressing the splash screen for Aevix Manager.")
+                        return@intercept null
                     }
+                    chain.proceed()
                 }
-                .onFailure { Utils.logE("Failed to hook Legacy ActivityRecord", it) }
-        }
+            }
+            .onFailure { Utils.logE("Failed to hook StartingSurfaceController", it) }
     }
 }

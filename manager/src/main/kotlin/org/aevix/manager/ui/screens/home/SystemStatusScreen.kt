@@ -804,21 +804,14 @@ private fun buildSections(
                     health = if (status.systemServerInjected) Health.Good else Health.Bad,
                     monospace = false,
                 ),
-                // Omitted below Android 10, where there is no wrapper to report on: the daemon only
-                // starts that machinery from Q and answers DEX2OAT_OK before then, so the row read
-                // "Supported", in green, for a feature the device does not have. A reader chasing a
-                // module that will not hook was being told this part was fine.
-                if (device.sdkInt < Build.VERSION_CODES.Q) null
-                else
-                    InfoItem(
-                        str(R.string.info_dex2oat),
-                        dex2oatLabel(context, status.dex2oatWrapperState),
-                        health =
-                            if (status.dex2oatWrapperState == IManagerService.DEX2OAT_OK)
-                                Health.Good
-                            else Health.Bad,
-                        monospace = false,
-                    ),
+                InfoItem(
+                    str(R.string.info_dex2oat),
+                    dex2oatLabel(context, status.dex2oatWrapperState),
+                    health =
+                        if (status.dex2oatWrapperState == IManagerService.DEX2OAT_OK) Health.Good
+                        else Health.Bad,
+                    monospace = false,
+                ),
             ),
         str(R.string.info_section_device) to
             listOf(

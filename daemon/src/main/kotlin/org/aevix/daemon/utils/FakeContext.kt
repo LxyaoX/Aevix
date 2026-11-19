@@ -37,13 +37,7 @@ class FakeContext(private val fakePackageName: String = "android") : ContextWrap
   override fun getApplicationInfo(): ApplicationInfo {
     if (systemAppInfo == null) {
       systemAppInfo =
-          runCatching {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                  sysPackageManager?.getApplicationInfo("android", 0L, 0)
-                } else {
-                  sysPackageManager?.getApplicationInfo("android", 0, 0)
-                }
-              }
+          runCatching { sysPackageManager?.getApplicationInfo("android", 0L, 0) }
               .getOrNull()
     }
     return systemAppInfo ?: ApplicationInfo()

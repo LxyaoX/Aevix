@@ -1,22 +1,13 @@
 package org.aevix.manager.data.model
 
 import android.content.pm.PackageInfo
-import android.os.Build
 
 /**
- * A package's version code, on every release this app runs on.
+ * A package's version code.
  *
- * `PackageInfo.getLongVersionCode` arrived in API 28 and the `int` field it replaces was deprecated
- * in the same release, so on a supported device one of the two is always the wrong one to call. The
- * minimum here is API 27: reading the long unguarded is a `NoSuchMethodError` on Android 8.1, not a
- * lint opinion, and it would take out the app list, the module list and the store's installed-check
- * — every screen that names a version.
- *
- * Reading the deprecated field is not a loss below 28. The high half it drops, `versionCodeMajor`,
- * cannot be set by a package installed on a release that has no concept of it.
+ * `PackageInfo.getLongVersionCode` arrived in API 28 and the `int` field it replaced was deprecated
+ * in the same release. This app's floor is 34, so there is one answer here and it is the long one;
+ * the guarded read that used to be needed for 8.1 is gone with it.
  */
 val PackageInfo.versionCodeCompat: Long
-    @Suppress("DEPRECATION")
-    get() =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) longVersionCode
-        else versionCode.toLong()
+    get() = longVersionCode

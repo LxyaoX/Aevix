@@ -108,11 +108,9 @@ object SystemServerService : Binder(), IBinder.DeathRecipient {
     // Register as the service name early to setup an IPC for `system_server`.
     Log.d(TAG, "Registering bridge service for `system_server` with name `$serviceName`.")
 
-    // `IServiceManager.registerForNotifications` is only available since Android R.
-    // On older platforms we simply let the real service replace our proxy in servicemanager.
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-      ServiceRegistrationWatcher.watch(serviceName)
-    }
+    // `IServiceManager.registerForNotifications` is what tells us the real service arrived, so
+    // the watcher is what `onTransact` forwards through once it has.
+    ServiceRegistrationWatcher.watch(serviceName)
 
     // The Zygisk module polls this name during `system_server` specialization,
     // so it must be claimed on every supported platform.
@@ -128,11 +126,9 @@ object SystemServerService : Binder(), IBinder.DeathRecipient {
    * it; see [ServiceRegistrationWatcher.unregisterWhenUnused] for why it cannot simply be asked.
    *
    * Worth arranging because the name invented for a late injection is ours alone, so unlike
-   * `serial` nothing will ever come along and replace it. Android R and later; older
-   * servicemanagers offer no way to take a name back, and there it stays registered.
+   * `serial` nothing will ever come along and replace it.
    */
   fun unregisterProxyService() {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
     val name = proxyServiceName ?: return
     ServiceRegistrationWatcher.unregisterWhenUnused(name, this)
   }
