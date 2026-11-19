@@ -297,15 +297,15 @@ object ManagerService : IManagerService.Stub() {
         }
       }
 
-  override fun setModuleEnabled(packageName: String, enabled: Boolean) {
+  override fun setModuleEnabled(packageName: String, enabled: Boolean): Boolean {
     requireManager()
-    if (enabled) ModuleDatabase.enableModule(packageName)
+    return if (enabled) ModuleDatabase.enableModule(packageName)
     else ModuleDatabase.disableModule(packageName)
   }
 
-  override fun setModuleScope(packageName: String, scope: MutableList<ScopeEntry>) {
+  override fun setModuleScope(packageName: String, scope: MutableList<ScopeEntry>): Boolean {
     requireManager()
-    ModuleDatabase.setModuleScope(packageName, scope)
+    return ModuleDatabase.setModuleScope(packageName, scope)
   }
 
   override fun getModuleScope(packageName: String) = ModuleDatabase.getModuleScope(packageName)
