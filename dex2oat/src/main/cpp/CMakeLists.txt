@@ -1,6 +1,16 @@
 cmake_minimum_required(VERSION 3.10)
 project(dex2oat)
 
+# CMake 3.28 and later scan for C++ modules by default from C++20 on, and for the standard library
+# it runs clang-scan-deps against the *host's* libstdc++ sources -- /usr/include/c++/15/bits/std.cc
+# on the CI image. The sysroot is the NDK's, which has no such file, so the scan fails with
+# "fatal error: 'bits/stdc++.h' file not found" and takes the whole build down.
+#
+# Nothing here imports a module, so the scan has nothing to find. It only ever passed before
+# because ccache still held the result from a configuration where VERSION_CODE had not changed;
+# a clean build fails every time.
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+
 add_executable(dex2oat dex2oat.cpp)
 add_library(oat_hook SHARED oat_hook.cpp)
 
