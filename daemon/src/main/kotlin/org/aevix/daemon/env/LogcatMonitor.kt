@@ -31,18 +31,23 @@ object LogcatMonitor {
 
   private external fun runLogcat()
 
-  // Thread-safe LRU implementation for log files
+  // Keeps the newest [maxEntries] log files and deletes the rest.
+  //
+  // Insertion order, not access order: a log file is written once and read only when someone asks
+  // for it, so "oldest written" is what should go and touching one should not save it.
   private class ThreadSafeLRU(private val maxEntries: Int = 10) {
     private val map = LinkedHashMap<File, Unit>(maxEntries, 1f, false)
 
     @Synchronized
     fun add(file: File) {
       map[file] = Unit
-      if (map.size > maxEntries) {
+      while (map.size > maxEntries) {
         val eldest = map.keys.first()
-        if (eldest.delete()) {
-          map.remove(eldest)
-        }
+        // The key goes whether or not the delete succeeded. A file that cannot be removed now —
+        // still open, or already gone — used to stay at the head of the map, so the next add
+        // retried the same one and the map grew past its ceiling for good.
+        eldest.delete()
+        map.remove(eldest)
       }
     }
   }

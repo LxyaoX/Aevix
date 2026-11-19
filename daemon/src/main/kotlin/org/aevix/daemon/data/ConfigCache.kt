@@ -370,13 +370,15 @@ object ConfigCache {
         // for user 11 alone was observed loading into and hooking a user 0 app.
         if (userId !in holders) return@forEach
 
-        val pkgInfo = packageManager?.getPackageInfoWithComponents(appPkg, MATCH_ALL_FLAGS, userId)
-        if (pkgInfo?.applicationInfo == null) return@forEach
+        val pkgInfo =
+            packageManager?.getPackageInfoWithComponents(appPkg, MATCH_ALL_FLAGS, userId)
+                ?: return@forEach
+        val appInfo = pkgInfo.applicationInfo ?: return@forEach
 
         val processNames = pkgInfo.fetchProcesses()
         if (processNames.isEmpty()) return@forEach
 
-        val appUid = pkgInfo.applicationInfo!!.uid
+        val appUid = appInfo.uid
 
         for (processName in processNames) {
           addToScope(processName, appUid, module)

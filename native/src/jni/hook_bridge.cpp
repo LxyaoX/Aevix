@@ -889,13 +889,14 @@ AEVIX_DEF_NATIVE_METHOD(jobjectArray, HookBridge, callbackSnapshot, jclass callb
     // Lock to ensure a consistent snapshot of the callback lists.
     lsplant::JNIMonitor monitor(env, backup);
 
-    // Get the generic Object class
-    jclass obj_class = env->FindClass("java/lang/Object");
+    // Resolved once rather than on every call. This runs for every hit on a hooked method, and
+    // `FindClass` is a lookup through the class loader; two of those plus a throwaway array, for a
+    // snapshot that is usually a handful of entries long, was the most expensive part of it.
+    static jclass obj_class =
+        static_cast<jclass>(env->NewGlobalRef(env->FindClass("java/lang/Object")));
+    static jclass obj_array_class =
+        static_cast<jclass>(env->NewGlobalRef(env->FindClass("[Ljava/lang/Object;")));
 
-    // Construct the result array Object[2][]
-    // Use an existing array to reliably get the Class for Object[]
-    jobjectArray dummy_array = env->NewObjectArray(0, obj_class, nullptr);
-    jclass obj_array_class = env->GetObjectClass(dummy_array);
     jobjectArray res = env->NewObjectArray(2, obj_array_class, nullptr);
 
     // Create modern and legacy arrays
