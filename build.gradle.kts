@@ -287,6 +287,20 @@ subprojects {
                 buildStagingDirectory = layout.buildDirectory.get().asFile
             }
 
+            // CMake 3.28 and later scan for C++ modules by default from C++20 on, and for the
+            // standard library that scan runs clang-scan-deps against the *host's* libstdc++
+            // sources -- /usr/include/c++/15/bits/std.cc on the runner -- while the compiler is
+            // pointed at the NDK sysroot, which has no such file. Nothing in this tree imports a
+            // module, so the scan finds nothing and only ever costs a failure.
+            //
+            // Set as a cache variable rather than a plain `set()` in each CMakeLists: the
+            // subdirectory that broke was `external/lsplant/lsplant/src/main/jni`, which is three
+            // `add_subdirectory` calls below `external/`, and a plain variable only reaches as far
+            // as the directory tree it was set in. `-D` is global.
+            defaultConfig.externalNativeBuild.cmake {
+                arguments.add("-DCMAKE_CXX_SCAN_FOR_MODULES=OFF")
+            }
+
             defaultConfig.apply {
                 minSdk = androidMinSdkVersion
                 // 64-bit ARM only. ARMv7 devices are a shrinking minority and every one of them
